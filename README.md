@@ -20,12 +20,20 @@ Everything outside the owned-key manifest is preserved. The tool uses a pinned, 
 Requirements: macOS or Linux and Python 3.9 or newer. The Codex CLI is needed only for the optional official diagnostic check.
 
 ```bash
-git clone https://github.com/taekimax/codex-policy.git
+git clone https://github.com/taekimax/codex-policy
 cd codex-policy
 ./bin/codex-policy doctor
 ./bin/codex-policy apply --yes
 ./bin/codex-policy verify
 ```
+
+The HTTPS clone is intentionally anonymous and suitable for public bootstrap and CI. Contributors with write access should use the repository's SSH origin for authenticated Git operations:
+
+```bash
+git remote set-url origin git@github.com:taekimax/codex-policy.git
+```
+
+Generate and register a separate SSH key on each machine. Never copy a private key between machines. GitHub API operations continue to use the separately authenticated `gh` client.
 
 Then start a new Codex session so guidance discovery runs again. Opening Codex in this repository also loads the repo-level `AGENTS.md`, which directs the session through the same safe workflow.
 

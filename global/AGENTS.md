@@ -59,6 +59,8 @@ The oracle is an advisory, read-only headless Codex worker using ChatGPT OAuth w
 
 Never invoke it when `ORACLE_SOLVER_ACTIVE=1`, and never substitute another model, effort, or authentication. If the exact oracle is unavailable, report it; continue ordinary diagnosis only when the user did not explicitly require the oracle.
 
-## GitHub CLI
+## GitHub
 
-- Before re-authenticating `gh`, verify the failure with a minimal approved network check outside the restricted sandbox; a sandbox DNS failure is not proof of invalid credentials. Never print the token.
+- On this host, prefer SSH for authenticated GitHub Git operations, retain `gh` OAuth for GitHub API operations, and keep HTTPS available for anonymous public clones and CI.
+- Before material external writes, verify the active identity when a mismatch is plausible. Treat restricted-sandbox network or Keychain failures as inconclusive until checked outside the sandbox.
+- Never expose credentials or alter authentication or scopes merely to work around a transport mismatch.

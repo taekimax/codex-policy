@@ -259,7 +259,7 @@ class CodexPolicyAcceptance(unittest.TestCase):
             self.assertIn("holds the update lock", result.stderr)
             self.assertFalse((self.home / "AGENTS.md").exists())
 
-    def test_normal_clone_with_origin_head_passes_audit(self) -> None:
+    def test_normal_clone_origin_allowlist_is_exact(self) -> None:
         source = self.scratch / "source"
         shutil.copytree(REPO, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))
         subprocess.run(["git", "init", "-b", "main"], cwd=str(source), check=True, stdout=subprocess.DEVNULL)
@@ -282,12 +282,33 @@ class CodexPolicyAcceptance(unittest.TestCase):
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
+        for allowed_origin in (
+            "https://github.com/taekimax/codex-policy",
+            "git@github.com:taekimax/codex-policy.git",
+        ):
+            subprocess.run(
+                ["git", "remote", "set-url", "origin", allowed_origin],
+                cwd=str(clone),
+                check=True,
+            )
+            result = subprocess.run(
+                [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
+                cwd=str(clone),
+                env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(result.stdout.strip(), "repository audit: passed")
+
         subprocess.run(
-            ["git", "remote", "set-url", "origin", "https://github.com/taekimax/codex-policy"],
+            ["git", "remote", "set-url", "origin", "https://github.com/taekimax/codex-policy.git"],
             cwd=str(clone),
             check=True,
         )
-        result = subprocess.run(
+        rejected = subprocess.run(
             [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
             cwd=str(clone),
             env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
@@ -296,8 +317,65 @@ class CodexPolicyAcceptance(unittest.TestCase):
             stderr=subprocess.PIPE,
             check=False,
         )
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(result.stdout.strip(), "repository audit: passed")
+        self.assertEqual(rejected.returncode, 2)
+        self.assertIn("unexpected origin URL", rejected.stderr)
+
+        subprocess.run(["git", "remote", "remove", "origin"], cwd=str(clone), check=True)
+        missing = subprocess.run(
+            [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
+            cwd=str(clone),
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(missing.returncode, 2)
+        self.assertIn("unexpected Git remote", missing.stderr)
+
+        subprocess.run(
+            ["git", "remote", "add", "origin", "https://github.com/taekimax/codex-policy"],
+            cwd=str(clone),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "remote", "set-url", "--add", "--push", "origin", "https://example.invalid/codex-policy"],
+            cwd=str(clone),
+            check=True,
+        )
+        push_override = subprocess.run(
+            [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
+            cwd=str(clone),
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(push_override.returncode, 2)
+        self.assertIn("unexpected origin push URL", push_override.stderr)
+
+        subprocess.run(
+            ["git", "config", "--unset-all", "remote.origin.pushurl"],
+            cwd=str(clone),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "remote", "set-url", "--add", "origin", "git@github.com:taekimax/codex-policy.git"],
+            cwd=str(clone),
+            check=True,
+        )
+        multiple_fetch_urls = subprocess.run(
+            [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
+            cwd=str(clone),
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(multiple_fetch_urls.returncode, 2)
+        self.assertIn("unexpected origin URL", multiple_fetch_urls.stderr)
 
     def test_write_commands_require_explicit_confirmation(self) -> None:
         result = self.run_policy("apply")
@@ -313,7 +391,7 @@ class CodexPolicyAcceptance(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "a57be8be389af11a017446f900502c6def504faa04f488e66181ccf811694671",
+            "9f1521c1aedbcbd7342e940e662c39c078cf297371b37ac326984d5eee3f23db",
         )
 
 
