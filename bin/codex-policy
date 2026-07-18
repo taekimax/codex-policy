@@ -62,8 +62,10 @@ EXPECTED_FILES = {
     "README.md",
     "SECURITY.md",
     "bin/codex-policy",
+    "bin/codex-skills-policy",
     "global/AGENTS.md",
     "global/config.owned.toml",
+    "global/official-skills.json",
     "global/owned-keys.txt",
     "tests/test_acceptance.py",
     "vendor/tomlkit/LICENSE",
@@ -790,7 +792,7 @@ def audit_git_history() -> None:
         tracked.add(path)
         if path not in EXPECTED_FILES:
             fail("repository audit found a non-allowlisted tracked path")
-        wanted_mode = "100755" if path == "bin/codex-policy" else "100644"
+        wanted_mode = "100755" if path in {"bin/codex-policy", "bin/codex-skills-policy"} else "100644"
         if mode != wanted_mode:
             fail("repository audit found an unsafe Git file mode")
     head = subprocess.run(
@@ -858,7 +860,7 @@ def audit_repository() -> None:
         if info.st_size > MAX_REPO_BYTES:
             fail("repository audit found an oversized artifact")
         executable = bool(stat.S_IMODE(info.st_mode) & 0o111)
-        if executable != (relative == "bin/codex-policy"):
+        if executable != (relative in {"bin/codex-policy", "bin/codex-skills-policy"}):
             fail("repository audit found an unsafe executable mode")
         data = read_regular(path, required=True, limit=MAX_REPO_BYTES)
         assert data is not None
@@ -867,6 +869,10 @@ def audit_repository() -> None:
     assert policy is not None
     if sha256(policy) != "cc5ad2ca70d0966f7489b99080dd3f60cfe6723931e3390cb1ce00cc79e1b696":
         fail("deployable global policy differs from the reviewed session artifact")
+    skills_policy = read_regular(REPO_ROOT / "global" / "official-skills.json", required=True, limit=MAX_REPO_BYTES)
+    assert skills_policy is not None
+    if sha256(skills_policy) != "8d4c1d1fd32be3aa0a7b421c517855ba8f15d4fe934ffb1682f5b7a93753909a":
+        fail("official-skills policy differs from the reviewed catalog artifact")
     load_owned_policy()
     audit_git_history()
 

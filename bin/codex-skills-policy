@@ -1,0 +1,1152 @@
+#!/usr/bin/env python3
+"""Portable, opt-in reconciliation for the reviewed Codex skill/plugin set."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+
+try:
+    import fcntl  # type: ignore
+except ImportError:
+    fcntl = None  # type: ignore
+
+
+sys.dont_write_bytecode = True
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "vendor"))
+
+try:
+    import tomlkit  # type: ignore
+    from tomlkit.items import AoT  # type: ignore
+except Exception:
+    print("codex-skills-policy: bundled TOML parser is unavailable", file=sys.stderr)
+    raise SystemExit(2)
+
+
+SCHEMA = 1
+MANIFEST = REPO_ROOT / "global" / "official-skills.json"
+MAX_BYTES = 16 * 1024 * 1024
+PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9-]*@[a-z0-9][a-z0-9-]*\Z")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*\Z")
+CURATED_NAMES = {
+    "aspnet-core", "chatgpt-apps", "cli-creator", "cloudflare-deploy", "define-goal",
+    "figma", "figma-code-connect-components", "figma-create-design-system-rules",
+    "figma-create-new-file", "figma-generate-design", "figma-generate-library",
+    "figma-implement-design", "figma-use", "gh-address-comments", "gh-fix-ci",
+    "hatch-pet", "jupyter-notebook", "linear", "migrate-to-codex", "netlify-deploy",
+    "notion-knowledge-capture", "notion-meeting-intelligence",
+    "notion-research-documentation", "notion-spec-to-implementation", "openai-docs",
+    "pdf", "playwright", "playwright-interactive", "render-deploy", "screenshot",
+    "security-best-practices", "security-ownership-map", "security-threat-model", "sentry",
+    "speech", "transcribe", "vercel-deploy", "winui-app", "yeet",
+}
+REQUIRED_PLUGIN_SKILLS = {
+    "documents@openai-primary-runtime": {"documents"},
+    "pdf@openai-primary-runtime": {"pdf"},
+    "spreadsheets@openai-primary-runtime": {"spreadsheets", "excel-live-control"},
+    "presentations@openai-primary-runtime": {"presentations"},
+    "template-creator@openai-primary-runtime": {"template-creator"},
+    "sites@openai-bundled": {"sites-building", "sites-hosting"},
+    "browser@openai-bundled": {"control-in-app-browser"},
+    "chrome@openai-bundled": {"control-chrome"},
+    "computer-use@openai-bundled": {"computer-use"},
+    "visualize@openai-bundled": {"visualize"},
+}
+REQUIRED_PLUGINS = set(REQUIRED_PLUGIN_SKILLS)
+CONNECTOR_SKILLS = {
+    "canva@openai-curated-remote": (set(), {
+        "canva-branded-presentation", "canva-resize-for-all-social-media", "canva-translate-design",
+    }),
+    "github@openai-curated-remote": ({"yeet"}, set()),
+    "gmail@openai-curated-remote": (set(), {"gmail"}),
+    "google-drive@openai-curated-remote": ({
+        "google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides",
+    }, set()),
+}
+
+
+class PolicyError(Exception):
+    """An intentionally sanitized error suitable for public output."""
+
+
+@dataclass(frozen=True)
+class PluginRecord:
+    plugin_id: str
+    enabled: bool
+    version: str
+    source_identity: str
+    source: Optional[Path]
+
+
+@dataclass
+class SkillsPlan:
+    before_config: Optional[bytes]
+    after_config: Optional[bytes]
+    config_mode: int
+    plugins_status: str
+    standalone_status: str
+    external_status: str
+    system_status: str
+    connector_status: str
+    transaction_status: str
+    operations: List[Tuple[str, str]]
+    inventory: Dict[str, PluginRecord]
+    blocked: bool
+
+    @property
+    def config_changed(self) -> bool:
+        return self.before_config != self.after_config
+
+    @property
+    def changed(self) -> bool:
+        return self.config_changed or bool(self.operations)
+
+
+def fail(message: str) -> None:
+    raise PolicyError(message)
+
+
+def codex_home() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    raw = configured if configured else os.path.join(os.path.expanduser("~"), ".codex")
+    return Path(os.path.abspath(os.path.expanduser(raw)))
+
+
+def user_home() -> Path:
+    raw = os.environ.get("HOME") or os.path.expanduser("~")
+    return Path(os.path.abspath(os.path.expanduser(raw)))
+
+
+def lexists(path: Path) -> bool:
+    return os.path.lexists(str(path))
+
+
+def validate_directory(path: Path, *, label: str) -> None:
+    if not lexists(path):
+        return
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("{} cannot be inspected".format(label))
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        fail("{} has an unsafe filesystem type".format(label))
+
+
+def read_regular(path: Path, *, required: bool = False) -> Optional[bytes]:
+    if not lexists(path):
+        if required:
+            fail("a required policy artifact is missing")
+        return None
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("a policy file cannot be inspected")
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail("a policy file has an unsafe filesystem type")
+    if info.st_size > MAX_BYTES:
+        fail("a policy file exceeds the safety limit")
+    try:
+        return path.read_bytes()
+    except OSError:
+        fail("a policy file cannot be read")
+
+
+def load_manifest() -> Dict[str, Any]:
+    raw = read_regular(MANIFEST, required=True)
+    assert raw is not None
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except Exception:
+        fail("the official-skills manifest is invalid")
+    if not isinstance(value, dict) or value.get("schema") != SCHEMA:
+        fail("the official-skills manifest schema is unsupported")
+    standalone = value.get("standalone")
+    plugins = value.get("plugins")
+    disabled = value.get("disabled_skills")
+    if not isinstance(standalone, dict) or not isinstance(plugins, dict) or not isinstance(disabled, list):
+        fail("the official-skills manifest is incomplete")
+    if standalone.get("desired_curated") != [] or standalone.get("experimental_catalog") != "absent":
+        fail("the standalone catalog policy differs from the reviewed state")
+    decisions = standalone.get("decisions")
+    if not isinstance(decisions, list) or {item.get("name") for item in decisions if isinstance(item, dict)} != CURATED_NAMES:
+        fail("the curated catalog decisions are incomplete")
+    required = plugins.get("required_enabled")
+    required_skills = plugins.get("required_plugin_skills")
+    forbidden = plugins.get("forbidden_local_plugins")
+    if not isinstance(required, list) or len(required) != len(REQUIRED_PLUGINS) or set(required) != REQUIRED_PLUGINS:
+        fail("the required plugin policy differs from the reviewed state")
+    if not isinstance(required_skills, list) or len(required_skills) != len(REQUIRED_PLUGIN_SKILLS):
+        fail("the required plugin skill policy is incomplete")
+    parsed_required: Dict[str, Set[str]] = {}
+    for item in required_skills:
+        if not isinstance(item, dict) or not isinstance(item.get("plugin"), str) or not isinstance(item.get("skills"), list):
+            fail("the required plugin skill policy is invalid")
+        if not all(isinstance(name, str) and NAME.fullmatch(name) for name in item["skills"]):
+            fail("the required plugin skill policy is invalid")
+        parsed_required[item["plugin"]] = set(item["skills"])
+    if parsed_required != REQUIRED_PLUGIN_SKILLS:
+        fail("the required plugin skill policy differs from the reviewed state")
+    if set(forbidden or []) != {
+        "canva@openai-curated", "game-studio@openai-curated", "github@openai-curated"
+    }:
+        fail("the forbidden plugin policy differs from the reviewed state")
+    for plugin_id in list(required) + list(forbidden):
+        if not isinstance(plugin_id, str) or not PLUGIN_ID.fullmatch(plugin_id):
+            fail("the plugin policy contains an invalid identifier")
+    connector_bundles = plugins.get("external_connector_bundles")
+    connector_skills = plugins.get("external_connector_skills")
+    if not isinstance(connector_bundles, list) or set(connector_bundles) != set(CONNECTOR_SKILLS):
+        fail("the connector bundle policy differs from the reviewed state")
+    if not isinstance(connector_skills, list) or len(connector_skills) != len(CONNECTOR_SKILLS):
+        fail("the connector skill policy is incomplete")
+    parsed_connectors: Dict[str, Tuple[Set[str], Set[str]]] = {}
+    for item in connector_skills:
+        if not isinstance(item, dict):
+            fail("the connector skill policy is invalid")
+        plugin_id = item.get("plugin")
+        active = item.get("active")
+        inactive = item.get("disabled")
+        if not isinstance(plugin_id, str) or not isinstance(active, list) or not isinstance(inactive, list):
+            fail("the connector skill policy is invalid")
+        if not all(isinstance(name, str) and NAME.fullmatch(name) for name in active + inactive):
+            fail("the connector skill policy is invalid")
+        parsed_connectors[plugin_id] = (set(active), set(inactive))
+    if parsed_connectors != CONNECTOR_SKILLS:
+        fail("the connector skill policy differs from the reviewed state")
+    reviewed_specs = {
+        ("plugin", "documents@openai-primary-runtime", "", "documents"),
+        ("plugin", "presentations@openai-primary-runtime", "", "presentations"),
+        ("plugin", "template-creator@openai-primary-runtime", "", "template-creator"),
+        ("connector-cache", "canva", "openai-curated-remote", "canva-branded-presentation"),
+        ("connector-cache", "canva", "openai-curated-remote", "canva-resize-for-all-social-media"),
+        ("connector-cache", "canva", "openai-curated-remote", "canva-translate-design"),
+        ("connector-cache", "gmail", "openai-curated-remote", "gmail"),
+        ("user", "", "", "find-skills"),
+        ("user", "", "", "web-design-guidelines"),
+    }
+    parsed_specs: Set[Tuple[str, str, str, str]] = set()
+    for item in disabled:
+        if not isinstance(item, dict):
+            fail("the disabled-skill policy is invalid")
+        kind = item.get("kind")
+        skill = item.get("skill")
+        if not isinstance(kind, str) or not isinstance(skill, str) or not NAME.fullmatch(skill):
+            fail("the disabled-skill policy is invalid")
+        plugin = item.get("plugin", "")
+        marketplace = item.get("marketplace", "")
+        if not isinstance(plugin, str) or not isinstance(marketplace, str):
+            fail("the disabled-skill policy is invalid")
+        parsed_specs.add((kind, plugin, marketplace, skill))
+    if parsed_specs != reviewed_specs:
+        fail("the disabled-skill policy differs from the reviewed state")
+    return value
+
+
+def run_plugin_command(home: Path, arguments: Sequence[str], *, json_output: bool) -> Any:
+    executable = shutil.which("codex")
+    if not executable:
+        fail("the Codex CLI is required for official plugin reconciliation")
+    environment = os.environ.copy()
+    environment["CODEX_HOME"] = str(home)
+    try:
+        result = subprocess.run(
+            [executable, "plugin"] + list(arguments),
+            stdout=subprocess.PIPE if json_output else subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            env=environment,
+            timeout=120,
+            check=False,
+        )
+    except Exception:
+        fail("the Codex plugin command failed")
+    if result.returncode != 0:
+        fail("the Codex plugin command failed")
+    if not json_output:
+        return None
+    if len(result.stdout) > MAX_BYTES:
+        fail("the Codex plugin inventory exceeds the safety limit")
+    try:
+        return json.loads(result.stdout.decode("utf-8"))
+    except Exception:
+        fail("the Codex plugin inventory is invalid")
+
+
+def plugin_inventory(home: Path) -> Dict[str, PluginRecord]:
+    payload = run_plugin_command(home, ["list", "--json"], json_output=True)
+    installed = payload.get("installed") if isinstance(payload, dict) else None
+    if not isinstance(installed, list):
+        fail("the Codex plugin inventory is invalid")
+    records: Dict[str, PluginRecord] = {}
+    for item in installed:
+        if not isinstance(item, dict):
+            fail("the Codex plugin inventory is invalid")
+        plugin_id = item.get("pluginId")
+        enabled = item.get("enabled")
+        version = item.get("version")
+        if (
+            not isinstance(plugin_id, str) or not PLUGIN_ID.fullmatch(plugin_id)
+            or not isinstance(enabled, bool) or not isinstance(version, str)
+            or not version or len(version) > 256
+        ):
+            fail("the Codex plugin inventory is invalid")
+        source_value = item.get("source")
+        source: Optional[Path] = None
+        if isinstance(source_value, dict) and source_value.get("source") == "local":
+            raw_path = source_value.get("path")
+            if isinstance(raw_path, str) and os.path.isabs(raw_path):
+                source = Path(raw_path)
+        try:
+            source_identity = json.dumps(source_value, sort_keys=True, separators=(",", ":"))
+        except Exception:
+            fail("the Codex plugin inventory is invalid")
+        if plugin_id in records:
+            fail("the Codex plugin inventory is ambiguous")
+        records[plugin_id] = PluginRecord(plugin_id, enabled, version, source_identity, source)
+    return records
+
+
+def safe_skill_file(root: Path, candidate: Path) -> Optional[Path]:
+    if not lexists(candidate):
+        return None
+    try:
+        root_absolute = Path(os.path.abspath(str(root)))
+        candidate_absolute = Path(os.path.abspath(str(candidate)))
+        candidate_absolute.relative_to(root_absolute)
+    except Exception:
+        fail("skill discovery escaped its reviewed root")
+    try:
+        root_info = root_absolute.lstat()
+    except OSError:
+        fail("a skill discovery root cannot be inspected")
+    if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+        fail("a skill discovery root has an unsafe filesystem type")
+    current = candidate_absolute
+    while current != root_absolute:
+        try:
+            info = current.lstat()
+        except OSError:
+            fail("a discovered skill cannot be inspected")
+        if stat.S_ISLNK(info.st_mode):
+            fail("a discovered skill uses an unsafe symlink")
+        current = current.parent
+    info = candidate_absolute.lstat()
+    if not stat.S_ISREG(info.st_mode):
+        fail("a discovered skill has an unsafe filesystem type")
+    return candidate_absolute
+
+
+def version_key(value: str) -> Tuple[Tuple[int, Any], ...]:
+    return tuple((0, int(part)) if part.isdigit() else (1, part.lower()) for part in re.split(r"([0-9]+)", value))
+
+
+def desired_disabled_paths(
+    home: Path,
+    inventory: Mapping[str, PluginRecord],
+    manifest: Mapping[str, Any],
+) -> Tuple[List[Path], List[Mapping[str, Any]], bool]:
+    paths: List[Path] = []
+    resolved_specs: List[Mapping[str, Any]] = []
+    blocked = False
+    for spec in manifest["disabled_skills"]:
+        kind = spec["kind"]
+        skill = spec["skill"]
+        candidate: Optional[Path] = None
+        root: Optional[Path] = None
+        if kind == "plugin":
+            record = inventory.get(spec["plugin"])
+            if record is not None and record.source is None:
+                blocked = True
+            elif record and record.source:
+                root = record.source
+                candidate = root / "skills" / skill / "SKILL.md"
+                if not lexists(candidate):
+                    blocked = True
+                    candidate = None
+        elif kind == "connector-cache":
+            root = home / "plugins" / "cache" / spec["marketplace"] / spec["plugin"]
+            if lexists(root):
+                validate_directory(root, label="a connector skill root")
+                try:
+                    versions = [entry for entry in root.iterdir() if entry.is_dir() and not entry.is_symlink()]
+                except OSError:
+                    fail("connector skill discovery failed")
+                if not versions:
+                    blocked = True
+                else:
+                    latest = sorted(versions, key=lambda item: version_key(item.name))[-1]
+                    candidate = latest / "skills" / skill / "SKILL.md"
+                    if not lexists(candidate):
+                        blocked = True
+                        candidate = None
+        elif kind == "user":
+            root = user_home() / ".agents" / "skills"
+            candidate = root / skill / "SKILL.md"
+        else:
+            fail("the disabled-skill policy contains an unsupported source")
+        if candidate is not None and root is not None:
+            anchor = home if kind == "connector-cache" else (user_home() if kind == "user" else root)
+            inspected = safe_skill_file(anchor, candidate)
+            if inspected is not None:
+                paths.append(inspected)
+                resolved_specs.append(spec)
+    if len(paths) != len(set(paths)):
+        fail("disabled-skill discovery is ambiguous")
+    return paths, resolved_specs, blocked
+
+
+def required_plugin_source_matches(record: PluginRecord, expected: Set[str]) -> bool:
+    if record.source is None:
+        return False
+    validate_directory(record.source, label="a required plugin source")
+    skills_root = record.source / "skills"
+    if not lexists(skills_root):
+        return False
+    validate_directory(skills_root, label="a required plugin skills directory")
+    discovered: Set[str] = set()
+    try:
+        entries = list(skills_root.iterdir())
+    except OSError:
+        fail("required plugin skill discovery failed")
+    for entry in entries:
+        try:
+            info = entry.lstat()
+        except OSError:
+            fail("a required plugin skill entry cannot be inspected")
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode) or not NAME.fullmatch(entry.name):
+            fail("a required plugin skill entry is ambiguous or unsafe")
+        candidate = entry / "SKILL.md"
+        if not lexists(candidate):
+            return False
+        safe_skill_file(record.source, candidate)
+        discovered.add(entry.name)
+    return discovered == expected
+
+
+def path_matches_spec(
+    home: Path,
+    raw_path: str,
+    spec: Mapping[str, Any],
+    inventory: Mapping[str, PluginRecord],
+) -> bool:
+    if not os.path.isabs(raw_path):
+        return False
+    path = Path(os.path.abspath(raw_path))
+    skill = spec["skill"]
+    if spec["kind"] == "user":
+        return path == user_home() / ".agents" / "skills" / skill / "SKILL.md"
+    if spec["kind"] == "plugin":
+        record = inventory.get(spec["plugin"])
+        if record and record.source and path == record.source / "skills" / skill / "SKILL.md":
+            return True
+        plugin_name, marketplace = spec["plugin"].split("@", 1)
+    else:
+        plugin_name = spec["plugin"]
+        marketplace = spec["marketplace"]
+    cache_root = home / "plugins" / "cache"
+    try:
+        relative = path.relative_to(cache_root)
+    except ValueError:
+        return False
+    parts = relative.parts
+    if len(parts) != 6 or tuple(parts[-3:]) != ("skills", skill, "SKILL.md"):
+        return False
+    found_marketplace, found_plugin = parts[0:2]
+    allowed_marketplaces = {marketplace}
+    if marketplace == "openai-curated-remote":
+        allowed_marketplaces.add("openai-curated")
+    return found_marketplace in allowed_marketplaces and found_plugin == plugin_name
+
+
+def managed_entry(
+    home: Path,
+    entry: Any,
+    specs: Sequence[Mapping[str, Any]],
+    inventory: Mapping[str, PluginRecord],
+) -> bool:
+    if not isinstance(entry, dict):
+        return False
+    raw_path = entry.get("path")
+    return isinstance(raw_path, str) and any(path_matches_spec(home, raw_path, spec, inventory) for spec in specs)
+
+
+def unresolved_entries_are_safe(
+    home: Path,
+    before: Optional[bytes],
+    all_specs: Sequence[Mapping[str, Any]],
+    resolved_specs: Sequence[Mapping[str, Any]],
+    inventory: Mapping[str, PluginRecord],
+) -> bool:
+    if before is None:
+        return True
+    resolved_ids = {id(spec) for spec in resolved_specs}
+    unresolved = [spec for spec in all_specs if id(spec) not in resolved_ids]
+    value = semantic(parse_config(before))
+    skills = value.get("skills")
+    entries = skills.get("config", []) if isinstance(skills, dict) else []
+    if entries and not isinstance(entries, list):
+        fail("skills.config has an unsupported shape")
+    for spec in unresolved:
+        matches = [
+            entry for entry in entries
+            if isinstance(entry, dict)
+            and isinstance(entry.get("path"), str)
+            and path_matches_spec(home, entry["path"], spec, inventory)
+        ]
+        if len(matches) > 1:
+            return False
+        if matches:
+            entry = matches[0]
+            if entry.get("enabled") is not False or set(entry) - {"path", "enabled"}:
+                return False
+    return True
+
+
+def parse_config(data: bytes) -> Any:
+    try:
+        return tomlkit.parse(data.decode("utf-8"))
+    except Exception:
+        fail("global configuration is not valid, unambiguous UTF-8 TOML")
+
+
+def semantic(document: Any) -> Dict[str, Any]:
+    try:
+        value = document.unwrap()
+    except Exception:
+        fail("global configuration cannot be interpreted safely")
+    if not isinstance(value, dict):
+        fail("global configuration has an unsupported root")
+    return value
+
+
+def without_managed_entries(
+    home: Path,
+    value: Dict[str, Any],
+    specs: Sequence[Mapping[str, Any]],
+    inventory: Mapping[str, PluginRecord],
+) -> Dict[str, Any]:
+    result = copy.deepcopy(value)
+    skills = result.get("skills")
+    if not isinstance(skills, dict):
+        return result
+    entries = skills.get("config")
+    if isinstance(entries, list):
+        retained = [entry for entry in entries if not managed_entry(home, entry, specs, inventory)]
+        if retained:
+            skills["config"] = retained
+        else:
+            skills.pop("config", None)
+    if not skills:
+        result.pop("skills", None)
+    return result
+
+
+def candidate_config(
+    home: Path,
+    before: Optional[bytes],
+    desired: Sequence[Path],
+    specs: Sequence[Mapping[str, Any]],
+    inventory: Mapping[str, PluginRecord],
+) -> Optional[bytes]:
+    document = parse_config(before) if before is not None else tomlkit.document()
+    before_semantic = semantic(document)
+    existing = before_semantic.get("skills", {}).get("config", []) if isinstance(before_semantic.get("skills"), dict) else []
+    if existing and not isinstance(existing, list):
+        fail("skills.config has an unsupported shape")
+    managed = [entry for entry in existing if managed_entry(home, entry, specs, inventory)]
+    wanted = [{"path": str(path), "enabled": False} for path in desired]
+    if managed == wanted:
+        return before
+    skills_table = document.get("skills")
+    if skills_table is not None and not isinstance(skills_table, dict):
+        fail("skills configuration conflicts with an existing value")
+    if skills_table is None:
+        skills_table = tomlkit.table()
+        document.add("skills", skills_table)
+    entries = skills_table.get("config")
+    if entries is not None and not isinstance(entries, AoT):
+        fail("skills.config has an unsupported shape")
+    if entries is None:
+        entries = tomlkit.aot()
+        skills_table.add("config", entries)
+    for index in reversed(range(len(entries))):
+        unwrapped = entries[index].unwrap() if hasattr(entries[index], "unwrap") else entries[index]
+        if managed_entry(home, unwrapped, specs, inventory):
+            if set(unwrapped) - {"path", "enabled"}:
+                fail("a managed skill entry contains unreviewed fields")
+            del entries[index]
+    for path in desired:
+        table = tomlkit.table()
+        table.add("path", str(path))
+        table.add("enabled", False)
+        entries.append(table)
+    if not entries:
+        del skills_table["config"]
+    if not skills_table:
+        del document["skills"]
+    try:
+        rendered = tomlkit.dumps(document).encode("utf-8")
+    except Exception:
+        fail("updated skill configuration cannot be serialized safely")
+    after_semantic = semantic(parse_config(rendered))
+    if without_managed_entries(home, before_semantic, specs, inventory) != without_managed_entries(
+        home, after_semantic, specs, inventory
+    ):
+        fail("updating skill entries would alter unrelated configuration")
+    return rendered if rendered else None
+
+
+def config_mode(path: Path) -> int:
+    if not lexists(path):
+        return 0o600
+    info = path.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail("global configuration has an unsafe filesystem type")
+    return stat.S_IMODE(info.st_mode)
+
+
+def standalone_status(home: Path) -> str:
+    for anchor, root in (
+        (home, home / "skills"),
+        (user_home(), user_home() / ".agents" / "skills"),
+    ):
+        for name in CURATED_NAMES:
+            candidate = root / name / "SKILL.md"
+            if lexists(candidate):
+                safe_skill_file(anchor, candidate)
+                return "blocking"
+    return "current"
+
+
+def external_status(home: Path) -> str:
+    context = home / "skills" / "context7-cli"
+    oracle = home / "skills" / "oracle-solver" / "SKILL.md"
+    present = 0
+    if lexists(context / "SKILL.md"):
+        safe_skill_file(home, context / "SKILL.md")
+        present += 1
+        skill = read_regular(context / "SKILL.md", required=True)
+        policy = read_regular(context / "agents" / "openai.yaml")
+        assert skill is not None
+        narrow_markers = (
+            b"Use only when the user explicitly mentions ctx7 or Context7",
+            b"explicitly invokes $context7-cli",
+            b"Do not trigger for generic library-documentation questions",
+        )
+        if (
+            policy is None
+            or not re.search(rb"(?m)^\s*allow_implicit_invocation:\s*true\s*$", policy)
+            or not all(marker in skill for marker in narrow_markers)
+        ):
+            return "review"
+    if lexists(oracle):
+        safe_skill_file(home, oracle)
+        present += 1
+    return "current" if present == 2 else "not_present"
+
+
+def system_status(home: Path, manifest: Mapping[str, Any]) -> str:
+    root = home / "skills" / ".system"
+    names = manifest.get("retained_system_skills")
+    if not isinstance(names, list) or not names:
+        fail("the retained system-skill policy is invalid")
+    for name in names:
+        if not isinstance(name, str) or not NAME.fullmatch(name):
+            fail("the retained system-skill policy is invalid")
+        candidate = root / name / "SKILL.md"
+        if not lexists(candidate):
+            return "not_present"
+        safe_skill_file(home, candidate)
+    return "current"
+
+
+def connector_status(home: Path, manifest: Mapping[str, Any]) -> str:
+    declarations = manifest["plugins"]["external_connector_skills"]
+    present = 0
+    for declaration in declarations:
+        plugin_name, marketplace = declaration["plugin"].split("@", 1)
+        root = home / "plugins" / "cache" / marketplace / plugin_name
+        if not lexists(root):
+            continue
+        present += 1
+        validate_directory(root, label="a connector skill root")
+        try:
+            versions = [entry for entry in root.iterdir() if entry.is_dir() and not entry.is_symlink()]
+        except OSError:
+            fail("connector skill discovery failed")
+        if not versions:
+            return "review"
+        latest = sorted(versions, key=lambda item: version_key(item.name))[-1]
+        skills_root = latest / "skills"
+        if not lexists(skills_root):
+            return "review"
+        validate_directory(skills_root, label="a connector skills directory")
+        expected = set(declaration["active"]) | set(declaration["disabled"])
+        discovered: Set[str] = set()
+        try:
+            skill_directories = list(skills_root.iterdir())
+        except OSError:
+            fail("connector skill discovery failed")
+        for directory in skill_directories:
+            candidate = directory / "SKILL.md"
+            if lexists(candidate):
+                safe_skill_file(home, candidate)
+                discovered.add(directory.name)
+        if discovered != expected:
+            return "review"
+    return "current" if present == len(declarations) else "not_present"
+
+
+def transaction_status(home: Path, ignored: Optional[Path] = None) -> str:
+    validate_directory(home / ".codex-policy", label="private policy state")
+    root = home / ".codex-policy" / "skills-transactions"
+    if not lexists(root):
+        return "clean"
+    info = root.lstat()
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        fail("private skill-policy transaction state has an unsafe filesystem type")
+    try:
+        entries = list(root.iterdir())
+    except OSError:
+        fail("private skill-policy transaction state cannot be listed")
+    for entry in entries:
+        if ignored is not None and entry == ignored:
+            continue
+        entry_info = entry.lstat()
+        if stat.S_ISLNK(entry_info.st_mode) or not stat.S_ISDIR(entry_info.st_mode):
+            fail("private skill-policy transaction state contains an unsafe entry")
+        raw = read_regular(entry / "state.json", required=True)
+        assert raw is not None
+        try:
+            value = json.loads(raw.decode("utf-8"))
+        except Exception:
+            fail("private skill-policy transaction state is invalid")
+        if not isinstance(value, dict) or value.get("schema") != SCHEMA:
+            fail("private skill-policy transaction state is unsupported")
+        if value.get("state") in {"prepared", "applying", "recovery_required"}:
+            return "recovery_required"
+    return "clean"
+
+
+def build_plan(home: Path, ignored_transaction: Optional[Path] = None) -> SkillsPlan:
+    validate_directory(home, label="Codex home")
+    manifest = load_manifest()
+    inventory = plugin_inventory(home)
+    required = manifest["plugins"]["required_enabled"]
+    forbidden = manifest["plugins"]["forbidden_local_plugins"]
+    operations: List[Tuple[str, str]] = []
+    blocked = False
+    transaction = transaction_status(home, ignored_transaction)
+    if transaction == "recovery_required":
+        blocked = True
+    for plugin_id in required:
+        record = inventory.get(plugin_id)
+        if record is None:
+            operations.append(("add", plugin_id))
+        else:
+            if not record.enabled or record.source is None:
+                blocked = True
+            elif not required_plugin_source_matches(record, REQUIRED_PLUGIN_SKILLS[plugin_id]):
+                blocked = True
+    for plugin_id in forbidden:
+        if plugin_id in inventory:
+            operations.append(("remove", plugin_id))
+    standalone = standalone_status(home)
+    if standalone == "blocking":
+        blocked = True
+    external = external_status(home)
+    system = system_status(home, manifest)
+    connectors = connector_status(home, manifest)
+    if external == "review" or system != "current" or connectors == "review":
+        blocked = True
+    desired, specs, disable_blocked = desired_disabled_paths(home, inventory, manifest)
+    if disable_blocked:
+        blocked = True
+    config_path = home / "config.toml"
+    before = read_regular(config_path)
+    if not unresolved_entries_are_safe(home, before, manifest["disabled_skills"], specs, inventory):
+        blocked = True
+    after = candidate_config(home, before, desired, specs, inventory)
+    plugin_status = "blocked" if blocked else ("drifted" if operations else "current")
+    return SkillsPlan(
+        before_config=before,
+        after_config=after,
+        config_mode=config_mode(config_path),
+        plugins_status=plugin_status,
+        standalone_status=standalone,
+        external_status=external,
+        system_status=system,
+        connector_status=connectors,
+        transaction_status=transaction,
+        operations=operations,
+        inventory=inventory,
+        blocked=blocked,
+    )
+
+
+def report(plan: SkillsPlan) -> Dict[str, Any]:
+    action = "blocked" if plan.blocked else ("update" if plan.changed else "none")
+    return {
+        "schema": SCHEMA,
+        "plugins": plan.plugins_status,
+        "skill_disables": "drifted" if plan.config_changed else "current",
+        "standalone_curated": plan.standalone_status,
+        "retained_external": plan.external_status,
+        "retained_system": plan.system_status,
+        "connector_skills": plan.connector_status,
+        "transaction": plan.transaction_status,
+        "action": action,
+    }
+
+
+def print_report(title: str, value: Mapping[str, Any], json_mode: bool) -> None:
+    if json_mode:
+        print(json.dumps(dict(value), sort_keys=True, separators=(",", ":")))
+        return
+    print(title)
+    for key, item in value.items():
+        if key != "schema":
+            print("{}: {}".format(key.replace("_", " "), item))
+
+
+def fsync_directory(path: Path) -> None:
+    descriptor = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def atomic_write(path: Path, data: bytes, mode: int) -> None:
+    descriptor = -1
+    temporary: Optional[str] = None
+    try:
+        descriptor, temporary = tempfile.mkstemp(prefix=".codex-skills-policy-", dir=str(path.parent))
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, str(path))
+        temporary = None
+        fsync_directory(path.parent)
+    except Exception:
+        fail("an atomic skill-policy update failed")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+class Lock:
+    def __init__(self, home: Path):
+        self.path = home / ".codex-skills-policy.lock"
+        self.descriptor: Optional[int] = None
+
+    def __enter__(self) -> "Lock":
+        if fcntl is None:
+            fail("this platform does not provide the required advisory lock")
+        flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
+        try:
+            descriptor = os.open(str(self.path), flags, 0o600)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.geteuid():
+                os.close(descriptor)
+                fail("the skill-policy lock has an unsafe filesystem type")
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.descriptor = descriptor
+        except BlockingIOError:
+            fail("another skill-policy operation holds the update lock")
+        except PolicyError:
+            raise
+        except OSError:
+            fail("the skill-policy lock cannot be acquired")
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        if self.descriptor is not None:
+            try:
+                fcntl.flock(self.descriptor, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(self.descriptor)
+
+
+def ensure_home(home: Path) -> None:
+    if lexists(home):
+        info = home.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            fail("Codex home has an unsafe filesystem type")
+        return
+    try:
+        home.mkdir(parents=True, mode=0o700)
+    except OSError:
+        fail("Codex home cannot be created")
+
+
+def backup_transaction(home: Path, plan: SkillsPlan) -> Path:
+    validate_directory(home / ".codex-policy", label="private policy state")
+    root = home / ".codex-policy" / "skills-transactions"
+    try:
+        root.mkdir(parents=True, exist_ok=True, mode=0o700)
+        os.chmod(root, 0o700)
+        directory = root / (time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-{:08x}".format(os.getpid()))
+        directory.mkdir(mode=0o700)
+    except OSError:
+        fail("private skill-policy backup storage cannot be created")
+    if plan.before_config is not None:
+        atomic_write(directory / "config.toml.before", plan.before_config, 0o600)
+    journal = {
+        "schema": SCHEMA,
+        "state": "prepared",
+        "config_present": plan.before_config is not None,
+        "config_before": hashlib.sha256(plan.before_config).hexdigest() if plan.before_config is not None else None,
+        "operations": plan.operations,
+        "plugin_before": {
+            plugin_id: (
+                {
+                    "present": True,
+                    "enabled": plan.inventory[plugin_id].enabled,
+                    "version": plan.inventory[plugin_id].version,
+                    "source_identity": plan.inventory[plugin_id].source_identity,
+                }
+                if plugin_id in plan.inventory else {"present": False}
+            )
+            for plugin_id in sorted({plugin_id for _, plugin_id in plan.operations})
+        },
+    }
+    atomic_write(directory / "state.json", (json.dumps(journal, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+    return directory
+
+
+def update_transaction(directory: Path, state: str) -> None:
+    raw = read_regular(directory / "state.json", required=True)
+    assert raw is not None
+    try:
+        journal = json.loads(raw.decode("utf-8"))
+    except Exception:
+        fail("private skill-policy transaction state is invalid")
+    if not isinstance(journal, dict) or journal.get("schema") != SCHEMA:
+        fail("private skill-policy transaction state is unsupported")
+    journal["state"] = state
+    atomic_write(directory / "state.json", (json.dumps(journal, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+
+
+def record_config_candidate(directory: Path, candidate: Optional[bytes]) -> None:
+    raw = read_regular(directory / "state.json", required=True)
+    assert raw is not None
+    try:
+        journal = json.loads(raw.decode("utf-8"))
+    except Exception:
+        fail("private skill-policy transaction state is invalid")
+    if not isinstance(journal, dict) or journal.get("schema") != SCHEMA:
+        fail("private skill-policy transaction state is unsupported")
+    journal["config_candidate_present"] = candidate is not None
+    journal["config_candidate"] = hashlib.sha256(candidate).hexdigest() if candidate is not None else None
+    atomic_write(directory / "state.json", (json.dumps(journal, sort_keys=True) + "\n").encode("utf-8"), 0o600)
+
+
+def restore_config(home: Path, directory: Path, before: Optional[bytes], mode: int) -> None:
+    target = home / "config.toml"
+    if before is None:
+        if lexists(target):
+            target.unlink()
+            fsync_directory(home)
+        return
+    backup = read_regular(directory / "config.toml.before", required=True)
+    assert backup is not None
+    if backup != before:
+        fail("the private skill-policy backup failed verification")
+    atomic_write(target, backup, mode)
+
+
+def plugin_apply(home: Path, operation: Tuple[str, str]) -> None:
+    action, plugin_id = operation
+    run_plugin_command(home, [action, plugin_id, "--json"], json_output=False)
+
+
+def compensate(home: Path, operations: Sequence[Tuple[str, str]]) -> bool:
+    failed = False
+    for action, plugin_id in reversed(operations):
+        inverse = "remove" if action == "add" else "add"
+        try:
+            plugin_apply(home, (inverse, plugin_id))
+        except Exception:
+            failed = True
+    return failed
+
+
+def affected_plugins_match(plan: SkillsPlan, observed: Mapping[str, PluginRecord]) -> bool:
+    for plugin_id in {plugin_id for _, plugin_id in plan.operations}:
+        if plan.inventory.get(plugin_id) != observed.get(plugin_id):
+            return False
+    return True
+
+
+def apply(home: Path) -> str:
+    ensure_home(home)
+    with Lock(home):
+        initial = build_plan(home)
+        if initial.blocked:
+            fail("skill-policy reconciliation is blocked by state requiring manual review")
+        if not initial.changed:
+            return "none"
+        directory = backup_transaction(home, initial)
+        performed: List[Tuple[str, str]] = []
+        policy_write_planned = False
+        policy_written: Optional[bytes] = None
+        try:
+            update_transaction(directory, "applying")
+            for operation in initial.operations:
+                try:
+                    plugin_apply(home, operation)
+                    performed.append(operation)
+                except Exception:
+                    try:
+                        observed = plugin_inventory(home)
+                        action, plugin_id = operation
+                        if (action == "add" and plugin_id in observed) or (action == "remove" and plugin_id not in observed):
+                            performed.append(operation)
+                    except Exception:
+                        pass
+                    raise
+            current = build_plan(home, directory)
+            if current.blocked or current.operations:
+                fail("plugin reconciliation did not reach the reviewed state")
+            if current.before_config != current.after_config:
+                if read_regular(home / "config.toml") != current.before_config:
+                    fail("global configuration changed concurrently; no skill entry was written")
+                record_config_candidate(directory, current.after_config)
+                policy_write_planned = True
+                policy_written = current.after_config
+                if current.after_config is None:
+                    if lexists(home / "config.toml"):
+                        (home / "config.toml").unlink()
+                        fsync_directory(home)
+                else:
+                    atomic_write(home / "config.toml", current.after_config, current.config_mode)
+            final = build_plan(home, directory)
+            if final.blocked or final.changed:
+                fail("post-apply skill-policy verification failed")
+            update_transaction(directory, "complete")
+            return "updated"
+        except Exception:
+            rollback_failed = False
+            if compensate(home, performed):
+                rollback_failed = True
+            try:
+                current_config = read_regular(home / "config.toml")
+                attributable = current_config == initial.before_config or (
+                    policy_write_planned and current_config == policy_written
+                )
+                if not attributable:
+                    rollback_failed = True
+                else:
+                    restore_config(home, directory, initial.before_config, initial.config_mode)
+            except Exception:
+                rollback_failed = True
+            try:
+                observed = plugin_inventory(home)
+                if not affected_plugins_match(initial, observed):
+                    rollback_failed = True
+            except Exception:
+                rollback_failed = True
+            state = "recovery_required" if rollback_failed else "rolled_back"
+            try:
+                update_transaction(directory, state)
+            except Exception:
+                rollback_failed = True
+            if rollback_failed:
+                fail("skill-policy reconciliation failed and requires manual recovery")
+            fail("skill-policy reconciliation failed; original state was restored")
+    return "none"
+
+
+def command_plan(args: argparse.Namespace) -> int:
+    value = report(build_plan(codex_home()))
+    print_report("codex-skills-policy plan", value, args.json)
+    return 1 if args.check and value["action"] != "none" else 0
+
+
+def command_verify(args: argparse.Namespace) -> int:
+    value = report(build_plan(codex_home()))
+    value["verified"] = "passed" if value["action"] == "none" else "failed"
+    print_report("codex-skills-policy verify", value, args.json)
+    return 0 if value["verified"] == "passed" else 1
+
+
+def command_doctor(args: argparse.Namespace) -> int:
+    value = report(build_plan(codex_home()))
+    audit = subprocess.run(
+        [sys.executable, str(REPO_ROOT / "bin" / "codex-policy"), "audit-repo"],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    value["repository_audit"] = "passed" if audit.returncode == 0 else "failed"
+    print_report("codex-skills-policy doctor", value, args.json)
+    return 0 if value["action"] == "none" and value["repository_audit"] == "passed" else 1
+
+
+def command_apply(args: argparse.Namespace) -> int:
+    if not args.yes:
+        fail("write operation requires the explicit --yes flag")
+    result = apply(codex_home())
+    print("codex-skills-policy apply")
+    print("result: {}".format(result))
+    print("next: start a new Codex session after verify passes")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="codex-skills-policy", description="Reconcile the reviewed Codex skill/plugin set")
+    commands = root.add_subparsers(dest="command")
+    plan = commands.add_parser("plan", help="show a read-only reconciliation plan")
+    plan.add_argument("--json", action="store_true")
+    plan.add_argument("--check", action="store_true")
+    plan.set_defaults(handler=command_plan)
+    doctor = commands.add_parser("doctor", help="plan and run the public-repository audit")
+    doctor.add_argument("--json", action="store_true")
+    doctor.set_defaults(handler=command_doctor)
+    apply_command = commands.add_parser("apply", help="apply the reviewed skill/plugin policy")
+    apply_command.add_argument("--yes", action="store_true")
+    apply_command.set_defaults(handler=command_apply)
+    verify = commands.add_parser("verify", help="verify the reviewed skill/plugin state")
+    verify.add_argument("--json", action="store_true")
+    verify.set_defaults(handler=command_verify)
+    return root
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    if sys.version_info < (3, 9):
+        fail("Python 3.9 or newer is required")
+    arguments = parser().parse_args(argv)
+    if arguments.command is None:
+        arguments = parser().parse_args(["plan"])
+    return int(arguments.handler(arguments))
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except PolicyError as error:
+        print("codex-skills-policy: {}".format(error), file=sys.stderr)
+        raise SystemExit(2)

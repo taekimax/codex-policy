@@ -20,7 +20,21 @@ from typing import Dict, Optional, Sequence
 sys.dont_write_bytecode = True
 REPO = Path(__file__).resolve().parent.parent
 SCRIPT = REPO / "bin" / "codex-policy"
+SKILLS_SCRIPT = REPO / "bin" / "codex-skills-policy"
 GLOBAL_POLICY = REPO / "global" / "AGENTS.md"
+OFFICIAL_SKILLS = REPO / "global" / "official-skills.json"
+REQUIRED_PLUGIN_SKILLS = {
+    "documents@openai-primary-runtime": {"documents"},
+    "pdf@openai-primary-runtime": {"pdf"},
+    "spreadsheets@openai-primary-runtime": {"spreadsheets", "excel-live-control"},
+    "presentations@openai-primary-runtime": {"presentations"},
+    "template-creator@openai-primary-runtime": {"template-creator"},
+    "sites@openai-bundled": {"sites-building", "sites-hosting"},
+    "browser@openai-bundled": {"control-in-app-browser"},
+    "chrome@openai-bundled": {"control-chrome"},
+    "computer-use@openai-bundled": {"computer-use"},
+    "visualize@openai-bundled": {"visualize"},
+}
 
 
 def digest(data: bytes) -> str:
@@ -64,6 +78,150 @@ class CodexPolicyAcceptance(unittest.TestCase):
     def transaction_directories(self) -> Sequence[Path]:
         root = self.home / ".codex-policy" / "transactions"
         return sorted(root.iterdir()) if root.exists() else []
+
+    def make_fake_codex(self, installed: Sequence[Dict[str, object]]) -> Dict[str, str]:
+        fake_bin = self.scratch / "fake-bin"
+        fake_bin.mkdir()
+        state = self.scratch / "plugin-state.json"
+        state.write_text(json.dumps({"installed": list(installed)}), encoding="utf-8")
+        executable = fake_bin / "codex"
+        executable.write_text(
+            """#!/usr/bin/env python3
+import json
+import os
+import sys
+
+state_path = os.environ["CODEX_FAKE_STATE"]
+with open(state_path, encoding="utf-8") as handle:
+    state = json.load(handle)
+args = sys.argv[1:]
+if args == ["plugin", "list", "--json"]:
+    print(json.dumps(state))
+    raise SystemExit(0)
+if len(args) >= 4 and args[0] == "plugin" and args[1] in {"add", "remove"} and args[-1] == "--json":
+    action, plugin_id = args[1], args[2]
+    state["installed"] = [item for item in state["installed"] if item["pluginId"] != plugin_id]
+    if action == "add":
+        name, marketplace = plugin_id.split("@", 1)
+        state["installed"].append({
+            "pluginId": plugin_id,
+            "enabled": True,
+            "version": os.environ.get("CODEX_FAKE_ADD_VERSION", "fixture-v1"),
+            "source": {"source": "local", "path": os.path.join(os.environ["CODEX_FAKE_SOURCES"], name)},
+        })
+    if os.environ.get("CODEX_FAKE_MUTATE_CONFIG") == "1":
+        config = os.path.join(os.environ["CODEX_HOME"], "config.toml")
+        with open(config, "a", encoding="utf-8") as handle:
+            handle.write("# fake plugin mutation " + action + " " + plugin_id + "\\n")
+    concurrent_edit = os.environ.get("CODEX_FAKE_CONCURRENT_EDIT")
+    if concurrent_edit:
+        config = os.path.join(os.environ["CODEX_HOME"], "config.toml")
+        with open(config, "a", encoding="utf-8") as handle:
+            handle.write(concurrent_edit + "\\n")
+    failure = os.environ.get("CODEX_FAKE_FAIL_COMMAND")
+    command_key = action + ":" + plugin_id
+    failed = state.setdefault("failed_commands", [])
+    should_fail = failure == command_key and command_key not in failed
+    if should_fail:
+        failed.append(command_key)
+    with open(state_path, "w", encoding="utf-8") as handle:
+        json.dump(state, handle)
+    if should_fail:
+        raise SystemExit(1)
+    print("{}")
+    raise SystemExit(0)
+raise SystemExit(2)
+""",
+            encoding="utf-8",
+        )
+        executable.chmod(0o755)
+        sources = self.scratch / "plugin-sources"
+        sources.mkdir()
+        return {
+            "PATH": str(fake_bin) + os.pathsep + os.environ.get("PATH", ""),
+            "HOME": str(self.scratch / "user-home"),
+            "CODEX_FAKE_STATE": str(state),
+            "CODEX_FAKE_SOURCES": str(sources),
+        }
+
+    def run_skills_policy(
+        self,
+        *arguments: str,
+        extra_environment: Optional[Dict[str, str]] = None,
+    ) -> subprocess.CompletedProcess[str]:
+        environment = os.environ.copy()
+        environment["CODEX_HOME"] = str(self.home)
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
+        if extra_environment:
+            environment.update(extra_environment)
+        return subprocess.run(
+            [sys.executable, str(SKILLS_SCRIPT)] + list(arguments),
+            cwd=str(REPO),
+            env=environment,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+
+    @staticmethod
+    def plugin_record(
+        plugin_id: str,
+        source: Path,
+        *,
+        version: str = "fixture-v1",
+        enabled: bool = True,
+        source_kind: str = "local",
+    ) -> Dict[str, object]:
+        return {
+            "pluginId": plugin_id,
+            "enabled": enabled,
+            "version": version,
+            "source": {"source": source_kind, "path": str(source)},
+        }
+
+    @staticmethod
+    def write_skill(path: Path) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("---\nname: fixture\ndescription: fixture\n---\n", encoding="utf-8")
+
+    def write_required_plugin_skills(self, sources: Path) -> None:
+        for plugin_id, skills in REQUIRED_PLUGIN_SKILLS.items():
+            plugin = plugin_id.split("@", 1)[0]
+            for skill in skills:
+                self.write_skill(sources / plugin / "skills" / skill / "SKILL.md")
+
+    def required_plugin_records(self, sources: Path) -> Sequence[Dict[str, object]]:
+        return [self.plugin_record(plugin_id, sources / plugin_id.split("@", 1)[0]) for plugin_id in REQUIRED_PLUGIN_SKILLS]
+
+    def write_system_skills(self) -> None:
+        for skill in ("imagegen", "openai-docs", "plugin-creator", "skill-creator", "skill-installer"):
+            self.write_skill(self.home / "skills" / ".system" / skill / "SKILL.md")
+
+    def write_current_context7(self) -> None:
+        skill = self.home / "skills" / "context7-cli" / "SKILL.md"
+        skill.parent.mkdir(parents=True, exist_ok=True)
+        skill.write_text(
+            "---\nname: context7-cli\n"
+            "description: Fetch docs. Use only when the user explicitly mentions ctx7 or Context7, "
+            "or explicitly invokes $context7-cli. Do not trigger for generic library-documentation questions.\n"
+            "---\n",
+            encoding="utf-8",
+        )
+        policy = skill.parent / "agents" / "openai.yaml"
+        policy.parent.mkdir(parents=True, exist_ok=True)
+        policy.write_text("policy:\n  allow_implicit_invocation: true\n", encoding="utf-8")
+
+    def make_current_skills_environment(
+        self,
+        extra_installed: Sequence[Dict[str, object]] = (),
+    ) -> Dict[str, str]:
+        sources = self.scratch / "plugin-sources"
+        installed = list(self.required_plugin_records(sources)) + list(extra_installed)
+        environment = self.make_fake_codex(installed)
+        self.write_required_plugin_skills(sources)
+        self.write_system_skills()
+        return environment
 
     def test_default_plan_is_read_only(self) -> None:
         self.assertFalse(self.home.exists())
@@ -259,6 +417,337 @@ class CodexPolicyAcceptance(unittest.TestCase):
             self.assertIn("holds the update lock", result.stderr)
             self.assertFalse((self.home / "AGENTS.md").exists())
 
+    def test_official_skills_plan_apply_verify_and_idempotence(self) -> None:
+        sources = self.scratch / "plugin-sources"
+        installed = [
+            self.plugin_record("documents@openai-primary-runtime", sources / "documents"),
+            self.plugin_record("presentations@openai-primary-runtime", sources / "presentations"),
+            self.plugin_record("template-creator@openai-primary-runtime", sources / "template-creator"),
+            self.plugin_record("canva@openai-curated", sources / "canva"),
+            self.plugin_record("game-studio@openai-curated", sources / "game-studio"),
+            self.plugin_record("github@openai-curated", sources / "github"),
+        ]
+        environment = self.make_fake_codex(installed)
+        self.write_required_plugin_skills(sources)
+        self.write_system_skills()
+        for skill in (
+            "canva-branded-presentation",
+            "canva-resize-for-all-social-media",
+            "canva-translate-design",
+        ):
+            self.write_skill(
+                self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills" / skill / "SKILL.md"
+            )
+        self.write_skill(
+            self.home / "plugins" / "cache" / "openai-curated-remote" / "gmail" / "0.1.5" / "skills" / "gmail" / "SKILL.md"
+        )
+        self.write_skill(
+            self.home / "plugins" / "cache" / "openai-curated-remote" / "github" / "0.1.8" / "skills" / "yeet" / "SKILL.md"
+        )
+        for skill in ("google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides"):
+            self.write_skill(
+                self.home / "plugins" / "cache" / "openai-curated-remote" / "google-drive" / "0.1.10" / "skills" / skill / "SKILL.md"
+            )
+        for skill in ("find-skills", "web-design-guidelines"):
+            self.write_skill(Path(environment["HOME"]) / ".agents" / "skills" / skill / "SKILL.md")
+        self.write_current_context7()
+        self.write_skill(self.home / "skills" / "oracle-solver" / "SKILL.md")
+        self.home.mkdir(parents=True, exist_ok=True)
+        stale = self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills" / "canva-branded-presentation" / "SKILL.md"
+        unrelated = self.scratch / "unrelated" / "SKILL.md"
+        self.home.joinpath("config.toml").write_text(
+            'model    = "keep-me" # preserve formatting\n'
+            '\n'
+            '[[skills.config]]\n'
+            'path = "{}"\n'
+            'enabled = true\n'
+            '\n'
+            '[[skills.config]]\n'
+            'path = "{}"\n'
+            'enabled = true\n'.format(unrelated, stale),
+            encoding="utf-8",
+        )
+
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["action"], "update")
+        self.assertEqual(json.loads(plan.stdout)["connector_skills"], "current")
+        self.assert_sanitized(plan)
+
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertIn("result: updated", applied.stdout)
+        config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
+        self.assertIn('model    = "keep-me" # preserve formatting', config)
+        self.assertIn(str(unrelated), config)
+        self.assertEqual(config.count("enabled = false"), 9)
+        state = json.loads(Path(environment["CODEX_FAKE_STATE"]).read_text(encoding="utf-8"))
+        plugin_ids = {item["pluginId"] for item in state["installed"]}
+        required = {
+            "documents@openai-primary-runtime", "pdf@openai-primary-runtime",
+            "spreadsheets@openai-primary-runtime", "presentations@openai-primary-runtime",
+            "template-creator@openai-primary-runtime", "sites@openai-bundled",
+            "browser@openai-bundled", "chrome@openai-bundled", "computer-use@openai-bundled",
+            "visualize@openai-bundled",
+        }
+        self.assertTrue(required.issubset(plugin_ids))
+        self.assertFalse(
+            plugin_ids.intersection(
+                {"canva@openai-curated", "game-studio@openai-curated", "github@openai-curated"}
+            )
+        )
+
+        verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(json.loads(verified.stdout)["verified"], "passed")
+        before = self.home.joinpath("config.toml").read_bytes()
+        second = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("result: none", second.stdout)
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), before)
+
+    def test_official_skills_preserves_unresolved_tombstones(self) -> None:
+        environment = self.make_current_skills_environment()
+        user_tombstone = Path(environment["HOME"]) / ".agents" / "skills" / "find-skills" / "SKILL.md"
+        connector_tombstone = (
+            self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "old"
+            / "skills" / "canva-branded-presentation" / "SKILL.md"
+        )
+        original = (
+            'model = "preserved"\n\n'
+            '[[skills.config]]\npath = "{}"\nenabled = false\n\n'
+            '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(user_tombstone, connector_tombstone)
+        ).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        updated = self.home.joinpath("config.toml").read_text(encoding="utf-8")
+        self.assertIn(str(user_tombstone), updated)
+        self.assertIn(str(connector_tombstone), updated)
+        self.assertEqual(updated.count("enabled = false"), 5)
+        verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+
+    def test_official_skills_blocks_unsafe_required_plugin_without_replacing_tombstone(self) -> None:
+        sources = self.scratch / "plugin-sources"
+        records = list(self.required_plugin_records(sources))
+        records = [
+            self.plugin_record(item["pluginId"], Path(item["source"]["path"]), source_kind="remote")
+            if item["pluginId"] == "documents@openai-primary-runtime" else item
+            for item in records
+        ]
+        environment = self.make_fake_codex(records)
+        self.write_required_plugin_skills(sources)
+        self.write_system_skills()
+        tombstone = self.home / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "old" / "skills" / "documents" / "SKILL.md"
+        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(tombstone).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["action"], "blocked")
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+
+    def test_official_skills_blocks_missing_required_skill_file(self) -> None:
+        environment = self.make_current_skills_environment()
+        missing = Path(environment["CODEX_FAKE_SOURCES"]) / "documents" / "skills" / "documents" / "SKILL.md"
+        missing.unlink()
+        tombstone = self.home / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "old" / "skills" / "documents" / "SKILL.md"
+        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(tombstone).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["action"], "blocked")
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+
+    def test_official_skills_blocks_extra_required_plugin_skill(self) -> None:
+        environment = self.make_current_skills_environment()
+        extra = Path(environment["CODEX_FAKE_SOURCES"]) / "documents" / "skills" / "unreviewed-extra" / "SKILL.md"
+        self.write_skill(extra)
+        verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verify.returncode, 1, verify.stderr)
+        self.assertEqual(json.loads(verify.stdout)["action"], "blocked")
+
+    def test_official_skills_blocks_unresolved_enabled_user_tombstone(self) -> None:
+        environment = self.make_current_skills_environment()
+        tombstone = Path(environment["HOME"]) / ".agents" / "skills" / "find-skills" / "SKILL.md"
+        original = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(tombstone).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+        verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verify.returncode, 1, verify.stderr)
+        self.assertEqual(json.loads(verify.stdout)["action"], "blocked")
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+
+    def test_official_skills_blocks_unresolved_enabled_connector_tombstone(self) -> None:
+        environment = self.make_current_skills_environment()
+        tombstone = (
+            self.home / "plugins" / "cache" / "openai-curated-remote" / "gmail" / "old"
+            / "skills" / "gmail" / "SKILL.md"
+        )
+        original = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(tombstone).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+        verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verify.returncode, 1, verify.stderr)
+        self.assertEqual(json.loads(verify.stdout)["action"], "blocked")
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+
+    def test_official_skills_blocks_present_connector_mismatch(self) -> None:
+        environment = self.make_current_skills_environment()
+        root = self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills"
+        for skill in ("canva-branded-presentation", "canva-resize-for-all-social-media"):
+            self.write_skill(root / skill / "SKILL.md")
+        missing_tombstone = root / "canva-translate-design" / "SKILL.md"
+        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(missing_tombstone).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+        verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verify.returncode, 1, verify.stderr)
+        payload = json.loads(verify.stdout)
+        self.assertEqual(payload["connector_skills"], "review")
+        self.assertEqual(payload["verified"], "failed")
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+
+    def test_official_skills_cache_fallback_is_anchored_to_codex_home(self) -> None:
+        environment = self.make_current_skills_environment()
+        unrelated = Path("/tmp") / "unrelated-policy-fixture" / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "v1" / "skills" / "documents" / "SKILL.md"
+        original_entry = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(unrelated)
+        self.home.joinpath("config.toml").write_text(original_entry, encoding="utf-8")
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        updated = self.home.joinpath("config.toml").read_text(encoding="utf-8")
+        self.assertIn(original_entry.strip(), updated)
+        self.assertEqual(updated.count("enabled = false"), 3)
+
+    def test_official_skills_review_and_missing_system_block_verification(self) -> None:
+        sources = self.scratch / "plugin-sources"
+        environment = self.make_fake_codex(self.required_plugin_records(sources))
+        self.write_required_plugin_skills(sources)
+        missing_system = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(missing_system.returncode, 1, missing_system.stderr)
+        self.assertEqual(json.loads(missing_system.stdout)["retained_system"], "not_present")
+
+        self.write_system_skills()
+        self.write_skill(self.home / "skills" / "context7-cli" / "SKILL.md")
+        external_review = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(external_review.returncode, 1, external_review.stderr)
+        self.assertEqual(json.loads(external_review.stdout)["retained_external"], "review")
+
+    def test_official_skills_context7_requires_true_policy_and_narrow_trigger(self) -> None:
+        environment = self.make_current_skills_environment()
+        self.write_current_context7()
+        self.write_skill(self.home / "skills" / "oracle-solver" / "SKILL.md")
+        current = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(current.returncode, 0, current.stderr)
+        self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
+
+        self.write_skill(self.home / "skills" / "context7-cli" / "SKILL.md")
+        broad = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(broad.returncode, 0, broad.stderr)
+        self.assertEqual(json.loads(broad.stdout)["retained_external"], "review")
+        self.assertEqual(json.loads(broad.stdout)["action"], "blocked")
+
+        self.write_current_context7()
+        policy = self.home / "skills" / "context7-cli" / "agents" / "openai.yaml"
+        policy.write_text("policy:\n  allow_implicit_invocation: false\n", encoding="utf-8")
+        unreachable = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(unreachable.returncode, 1, unreachable.stderr)
+        self.assertEqual(json.loads(unreachable.stdout)["retained_external"], "review")
+
+    def test_official_skills_partial_failure_restores_exact_config_and_plugin_state(self) -> None:
+        sources = self.scratch / "plugin-sources"
+        canva = self.plugin_record("canva@openai-curated", sources / "canva")
+        environment = self.make_current_skills_environment([canva])
+        environment.update({
+            "CODEX_FAKE_FAIL_COMMAND": "remove:canva@openai-curated",
+        })
+        original = b'model = "exact-backup"\n'
+        self.home.joinpath("config.toml").write_bytes(original)
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertIn("original state was restored", applied.stderr)
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+        state = json.loads(Path(environment["CODEX_FAKE_STATE"]).read_text(encoding="utf-8"))
+        restored = next(item for item in state["installed"] if item["pluginId"] == "canva@openai-curated")
+        self.assertEqual(restored["version"], "fixture-v1")
+        transaction = next((self.home / ".codex-policy" / "skills-transactions").iterdir())
+        journal = json.loads((transaction / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(journal["state"], "rolled_back")
+        self.assertEqual(journal["plugin_before"]["canva@openai-curated"]["version"], "fixture-v1")
+
+    def test_official_skills_changed_compensation_requires_recovery(self) -> None:
+        sources = self.scratch / "plugin-sources"
+        canva = self.plugin_record("canva@openai-curated", sources / "canva")
+        environment = self.make_current_skills_environment([canva])
+        environment.update({
+            "CODEX_FAKE_FAIL_COMMAND": "remove:canva@openai-curated",
+            "CODEX_FAKE_ADD_VERSION": "fixture-v2",
+        })
+        original = b'model = "exact-even-on-recovery"\n'
+        self.home.joinpath("config.toml").write_bytes(original)
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertIn("requires manual recovery", applied.stderr)
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+        transaction = next((self.home / ".codex-policy" / "skills-transactions").iterdir())
+        journal = json.loads((transaction / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(journal["state"], "recovery_required")
+
+    def test_official_skills_concurrent_failure_edit_is_not_overwritten(self) -> None:
+        sources = self.scratch / "plugin-sources"
+        canva = self.plugin_record("canva@openai-curated", sources / "canva")
+        environment = self.make_current_skills_environment([canva])
+        environment.update({
+            "CODEX_FAKE_FAIL_COMMAND": "remove:canva@openai-curated",
+            "CODEX_FAKE_CONCURRENT_EDIT": "concurrent_note = true",
+        })
+        original = b'model = "do-not-overwrite-concurrent"\n'
+        self.home.joinpath("config.toml").write_bytes(original)
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertIn("requires manual recovery", applied.stderr)
+        current = self.home.joinpath("config.toml").read_bytes()
+        self.assertTrue(current.startswith(original))
+        self.assertIn(b"concurrent_note = true", current)
+        self.assertNotEqual(current, original)
+        transaction = next((self.home / ".codex-policy" / "skills-transactions").iterdir())
+        journal = json.loads((transaction / "state.json").read_text(encoding="utf-8"))
+        self.assertEqual(journal["state"], "recovery_required")
+
+    def test_official_skills_blocks_unexpected_standalone_without_deleting(self) -> None:
+        environment = self.make_fake_codex([])
+        standalone = self.home / "skills" / "playwright" / "SKILL.md"
+        self.write_skill(standalone)
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["action"], "blocked")
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertTrue(standalone.exists())
+        self.assert_sanitized(applied)
+
+    def test_official_skills_checks_shared_user_discovery_root(self) -> None:
+        environment = self.make_fake_codex([])
+        standalone = Path(environment["HOME"]) / ".agents" / "skills" / "gh-fix-ci" / "SKILL.md"
+        self.write_skill(standalone)
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["standalone_curated"], "blocking")
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 2)
+        self.assertTrue(standalone.exists())
+
+    def test_official_skills_write_requires_confirmation(self) -> None:
+        environment = self.make_fake_codex([])
+        result = self.run_skills_policy("apply", extra_environment=environment)
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse(self.home.exists())
+
     def test_normal_clone_origin_allowlist_is_exact(self) -> None:
         source = self.scratch / "source"
         shutil.copytree(REPO, source, ignore=shutil.ignore_patterns(".git", "__pycache__"))
@@ -392,6 +881,10 @@ class CodexPolicyAcceptance(unittest.TestCase):
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
             "cc5ad2ca70d0966f7489b99080dd3f60cfe6723931e3390cb1ce00cc79e1b696",
+        )
+        self.assertEqual(
+            digest(OFFICIAL_SKILLS.read_bytes()),
+            "8d4c1d1fd32be3aa0a7b421c517855ba8f15d4fe934ffb1682f5b7a93753909a",
         )
 
 

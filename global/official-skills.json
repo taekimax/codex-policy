@@ -1,0 +1,115 @@
+{
+  "schema": 1,
+  "reviewed_on": "2026-07-18",
+  "sources": {
+    "standalone_repository": "openai/skills",
+    "standalone_revision": "49f948faa9258a0c61caceaf225e179651397431",
+    "plugin_marketplace": "openai/plugins",
+    "plugin_marketplace_revision": "11c74d6ba24d3a6d48f54a194cd00ef3beea18f9"
+  },
+  "standalone": {
+    "desired_curated": [],
+    "experimental_catalog": "absent",
+    "decisions": [
+      {"name": "aspnet-core", "decision": "reject", "reason": "No recurring ASP.NET workload."},
+      {"name": "chatgpt-apps", "decision": "reject", "reason": "No active ChatGPT Apps implementation workload."},
+      {"name": "cli-creator", "decision": "reject", "reason": "Broad workflow overlaps normal coding guidance."},
+      {"name": "cloudflare-deploy", "decision": "reject", "reason": "No recurring Cloudflare deployment target."},
+      {"name": "define-goal", "decision": "reject", "reason": "Goal handling is already provided by the runtime."},
+      {"name": "figma", "decision": "reject", "reason": "No active Figma-backed implementation need."},
+      {"name": "figma-code-connect-components", "decision": "reject", "reason": "No active Code Connect workflow."},
+      {"name": "figma-create-design-system-rules", "decision": "reject", "reason": "No active Figma design-system migration."},
+      {"name": "figma-create-new-file", "decision": "reject", "reason": "No recurring need to author Figma files."},
+      {"name": "figma-generate-design", "decision": "reject", "reason": "No recurring Figma generation workflow."},
+      {"name": "figma-generate-library", "decision": "reject", "reason": "No active Figma library work."},
+      {"name": "figma-implement-design", "decision": "reject", "reason": "No active design-link implementation workflow."},
+      {"name": "figma-use", "decision": "reject", "reason": "No active Figma connector workflow."},
+      {"name": "gh-address-comments", "decision": "reject", "reason": "Current GitHub publishing support covers the recurring path."},
+      {"name": "gh-fix-ci", "decision": "reject", "reason": "CI repair is handled case by case without a global skill."},
+      {"name": "hatch-pet", "decision": "reject", "reason": "Demonstration skill without a production need."},
+      {"name": "jupyter-notebook", "decision": "reject", "reason": "No recurring notebook authoring workload."},
+      {"name": "linear", "decision": "reject", "reason": "No active Linear workspace dependency."},
+      {"name": "migrate-to-codex", "decision": "reject", "reason": "Migration is not an ongoing workflow."},
+      {"name": "netlify-deploy", "decision": "reject", "reason": "No recurring Netlify deployment target."},
+      {"name": "notion-knowledge-capture", "decision": "reject", "reason": "No active Notion workspace dependency."},
+      {"name": "notion-meeting-intelligence", "decision": "reject", "reason": "No active Notion meeting workflow."},
+      {"name": "notion-research-documentation", "decision": "reject", "reason": "No active Notion research workflow."},
+      {"name": "notion-spec-to-implementation", "decision": "reject", "reason": "No active Notion specification workflow."},
+      {"name": "openai-docs", "decision": "reject", "reason": "Already supplied as a system skill."},
+      {"name": "pdf", "decision": "reject", "reason": "Already supplied by the primary runtime plugin."},
+      {"name": "playwright", "decision": "reject", "reason": "Overlaps installed browser control and adds an unpinned tool path."},
+      {"name": "playwright-interactive", "decision": "reject", "reason": "Overlaps installed browser control and adds an unpinned tool path."},
+      {"name": "render-deploy", "decision": "reject", "reason": "No recurring Render deployment target."},
+      {"name": "screenshot", "decision": "reject", "reason": "Overlaps installed browser and computer-use capture."},
+      {"name": "security-best-practices", "decision": "reject", "reason": "Security review remains scoped to explicit tasks."},
+      {"name": "security-ownership-map", "decision": "reject", "reason": "No recurring ownership-analysis workload."},
+      {"name": "security-threat-model", "decision": "reject", "reason": "Threat modeling remains explicit and project-scoped."},
+      {"name": "sentry", "decision": "reject", "reason": "No active Sentry workspace dependency."},
+      {"name": "speech", "decision": "reject", "reason": "No recurring speech-generation workload."},
+      {"name": "transcribe", "decision": "reject", "reason": "No recurring transcription workload."},
+      {"name": "vercel-deploy", "decision": "reject", "reason": "No recurring Vercel deployment target."},
+      {"name": "winui-app", "decision": "reject", "reason": "The active host and projects are not WinUI based."},
+      {"name": "yeet", "decision": "reject", "reason": "Already supplied by the connected GitHub plugin."}
+    ]
+  },
+  "plugins": {
+    "required_enabled": [
+      "documents@openai-primary-runtime",
+      "pdf@openai-primary-runtime",
+      "spreadsheets@openai-primary-runtime",
+      "presentations@openai-primary-runtime",
+      "template-creator@openai-primary-runtime",
+      "sites@openai-bundled",
+      "browser@openai-bundled",
+      "chrome@openai-bundled",
+      "computer-use@openai-bundled",
+      "visualize@openai-bundled"
+    ],
+    "required_plugin_skills": [
+      {"plugin": "documents@openai-primary-runtime", "skills": ["documents"]},
+      {"plugin": "pdf@openai-primary-runtime", "skills": ["pdf"]},
+      {"plugin": "spreadsheets@openai-primary-runtime", "skills": ["spreadsheets", "excel-live-control"]},
+      {"plugin": "presentations@openai-primary-runtime", "skills": ["presentations"]},
+      {"plugin": "template-creator@openai-primary-runtime", "skills": ["template-creator"]},
+      {"plugin": "sites@openai-bundled", "skills": ["sites-building", "sites-hosting"]},
+      {"plugin": "browser@openai-bundled", "skills": ["control-in-app-browser"]},
+      {"plugin": "chrome@openai-bundled", "skills": ["control-chrome"]},
+      {"plugin": "computer-use@openai-bundled", "skills": ["computer-use"]},
+      {"plugin": "visualize@openai-bundled", "skills": ["visualize"]}
+    ],
+    "forbidden_local_plugins": ["canva@openai-curated", "game-studio@openai-curated", "github@openai-curated"],
+    "external_connector_bundles": ["canva@openai-curated-remote", "github@openai-curated-remote", "gmail@openai-curated-remote", "google-drive@openai-curated-remote"],
+    "external_connector_skills": [
+      {"plugin": "canva@openai-curated-remote", "active": [], "disabled": ["canva-branded-presentation", "canva-resize-for-all-social-media", "canva-translate-design"]},
+      {"plugin": "github@openai-curated-remote", "active": ["yeet"], "disabled": []},
+      {"plugin": "gmail@openai-curated-remote", "active": [], "disabled": ["gmail"]},
+      {"plugin": "google-drive@openai-curated-remote", "active": ["google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides"], "disabled": []}
+    ],
+    "decisions": [
+      {"group": "game-studio", "decision": "reject", "reason": "Current clean sessions do not register the plugin's skills."},
+      {"group": "build-macos-apps", "decision": "reject", "reason": "Intrusive fixed project conventions conflict with established repositories."},
+      {"group": "build-web-apps", "decision": "reject", "reason": "Broad workflow overlaps existing coding and hosting support."},
+      {"group": "figma", "decision": "reject", "reason": "No active Figma-backed workflow."},
+      {"group": "openai-developers", "decision": "reject", "reason": "System OpenAI documentation support is sufficient."},
+      {"group": "codex-security", "decision": "reject", "reason": "Security workflows remain explicit and project-scoped."},
+      {"group": "external-workspaces", "decision": "reject", "reason": "Do not add account-bound services without an active task."},
+      {"group": "runtime-and-connected-bundles", "decision": "retain", "reason": "Keep existing platform and connector bundles externally managed."}
+    ]
+  },
+  "disabled_skills": [
+    {"kind": "plugin", "plugin": "documents@openai-primary-runtime", "skill": "documents"},
+    {"kind": "plugin", "plugin": "presentations@openai-primary-runtime", "skill": "presentations"},
+    {"kind": "plugin", "plugin": "template-creator@openai-primary-runtime", "skill": "template-creator"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "canva", "skill": "canva-branded-presentation"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "canva", "skill": "canva-resize-for-all-social-media"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "canva", "skill": "canva-translate-design"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "gmail", "skill": "gmail"},
+    {"kind": "user", "skill": "find-skills"},
+    {"kind": "user", "skill": "web-design-guidelines"}
+  ],
+  "retained_external_skills": [
+    {"name": "context7-cli", "policy": "implicit-narrow"},
+    {"name": "oracle-solver", "policy": "explicit-or-stuck"}
+  ],
+  "retained_system_skills": ["imagegen", "openai-docs", "plugin-creator", "skill-creator", "skill-installer"]
+}
