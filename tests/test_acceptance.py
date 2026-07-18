@@ -283,7 +283,7 @@ class CodexPolicyAcceptance(unittest.TestCase):
             stderr=subprocess.DEVNULL,
         )
         subprocess.run(
-            ["git", "remote", "set-url", "origin", "https://github.com/taekimax/codex-policy.git"],
+            ["git", "remote", "set-url", "origin", "https://github.com/taekimax/codex-policy"],
             cwd=str(clone),
             check=True,
         )

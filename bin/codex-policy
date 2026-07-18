@@ -814,6 +814,7 @@ def audit_git_history() -> None:
     if "origin" in remotes:
         url = run_git(["remote", "get-url", "origin"]).strip()
         allowed_urls = {
+            "https://github.com/taekimax/codex-policy",
             "https://github.com/taekimax/codex-policy.git",
         }
         if url not in allowed_urls:
