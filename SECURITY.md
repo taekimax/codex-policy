@@ -1,0 +1,14 @@
+# Security
+
+This repository is public and must contain only the allowlisted portable policy artifacts. Never contribute live Codex configuration, credentials, authentication files, session data, histories, logs, caches, backups, trust records, machine paths, environment values, or runtime fingerprints.
+
+Run both checks before every public push:
+
+```bash
+python3 tests/test_acceptance.py
+./bin/codex-policy audit-repo
+```
+
+If a secret reaches Git history, rotate or revoke it before attempting history cleanup. For an unpublished repository, recreate clean history from reviewed allowlisted files. Do not assume `.gitignore` or deletion from the current tree removes a secret from reachable history.
+
+Do not disclose an active credential in a public issue. Use GitHub's private security-reporting surface when available; otherwise report the issue without including the credential and rotate it immediately.

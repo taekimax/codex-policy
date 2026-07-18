@@ -1,0 +1,1006 @@
+#!/usr/bin/env python3
+"""Portable, fail-closed installer for the public codex-policy repository."""
+
+from __future__ import annotations
+
+import argparse
+import copy
+import hashlib
+import json
+import os
+import re
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+from collections.abc import MutableMapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set, Tuple
+
+try:
+    import fcntl  # type: ignore
+except ImportError:
+    fcntl = None  # type: ignore
+
+
+sys.dont_write_bytecode = True
+REPO_ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(REPO_ROOT / "vendor"))
+
+try:
+    import tomlkit  # type: ignore
+except Exception:
+    print("codex-policy: bundled TOML parser is unavailable", file=sys.stderr)
+    raise SystemExit(2)
+
+
+SCHEMA = 1
+POLICY_SOURCE = REPO_ROOT / "global" / "AGENTS.md"
+CONFIG_SOURCE = REPO_ROOT / "global" / "config.owned.toml"
+OWNED_SOURCE = REPO_ROOT / "global" / "owned-keys.txt"
+TARGET_NAMES = ("AGENTS.md", "config.toml")
+INCOMPLETE_STATES = {"prepared", "applying", "recovery_required"}
+MAX_TARGET_BYTES = 16 * 1024 * 1024
+MAX_REPO_BYTES = 1024 * 1024
+EXPECTED_OWNED_KEYS = {
+    "agents.max_threads",
+    "agents.max_depth",
+    "agents.job_max_runtime_seconds",
+}
+
+EXPECTED_FILES = {
+    ".gitattributes",
+    ".github/workflows/verify.yml",
+    ".gitignore",
+    "AGENTS.md",
+    "README.md",
+    "SECURITY.md",
+    "bin/codex-policy",
+    "global/AGENTS.md",
+    "global/config.owned.toml",
+    "global/owned-keys.txt",
+    "tests/test_acceptance.py",
+    "vendor/tomlkit/LICENSE",
+    "vendor/tomlkit/__init__.py",
+    "vendor/tomlkit/_compat.py",
+    "vendor/tomlkit/_types.py",
+    "vendor/tomlkit/_utils.py",
+    "vendor/tomlkit/api.py",
+    "vendor/tomlkit/container.py",
+    "vendor/tomlkit/exceptions.py",
+    "vendor/tomlkit/items.py",
+    "vendor/tomlkit/parser.py",
+    "vendor/tomlkit/py.typed",
+    "vendor/tomlkit/source.py",
+    "vendor/tomlkit/toml_document.py",
+    "vendor/tomlkit/toml_file.py",
+}
+
+
+class PolicyError(Exception):
+    """An intentionally sanitized error suitable for public output."""
+
+
+@dataclass
+class FilePlan:
+    name: str
+    before: Optional[bytes]
+    after: bytes
+    mode: int
+
+    @property
+    def changed(self) -> bool:
+        return self.before != self.after
+
+    @property
+    def status(self) -> str:
+        if self.before is None:
+            return "missing"
+        return "current" if not self.changed else "drifted"
+
+
+@dataclass
+class InstallPlan:
+    files: List[FilePlan]
+    override_present: bool
+    recovery_required: bool
+
+    @property
+    def changed(self) -> bool:
+        return any(item.changed for item in self.files)
+
+    @property
+    def blocked(self) -> bool:
+        return self.override_present or self.recovery_required
+
+
+def fail(message: str) -> None:
+    raise PolicyError(message)
+
+
+def sha256(data: Optional[bytes]) -> Optional[str]:
+    if data is None:
+        return None
+    return hashlib.sha256(data).hexdigest()
+
+
+def home_path() -> Path:
+    configured = os.environ.get("CODEX_HOME")
+    raw = configured if configured else os.path.join(os.path.expanduser("~"), ".codex")
+    return Path(os.path.abspath(os.path.expanduser(raw)))
+
+
+def lexists(path: Path) -> bool:
+    return os.path.lexists(str(path))
+
+
+def read_regular(path: Path, *, required: bool, limit: int) -> Optional[bytes]:
+    if not lexists(path):
+        if required:
+            fail("a required repository artifact is missing")
+        return None
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("a required file cannot be inspected")
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail("a managed file has an unsafe filesystem type")
+    if info.st_size > limit:
+        fail("a managed file exceeds the safety limit")
+    try:
+        return path.read_bytes()
+    except OSError:
+        fail("a managed file cannot be read")
+
+
+def parse_toml(data: bytes) -> Any:
+    try:
+        text = data.decode("utf-8")
+        return tomlkit.parse(text)
+    except Exception:
+        fail("global configuration is not valid, unambiguous UTF-8 TOML")
+
+
+def semantic(document: Any) -> Dict[str, Any]:
+    try:
+        value = document.unwrap()
+    except Exception:
+        fail("global configuration cannot be interpreted safely")
+    if not isinstance(value, dict):
+        fail("global configuration has an unsupported root")
+    return value
+
+
+def flatten_leaves(value: Any, prefix: Tuple[str, ...] = ()) -> Iterable[Tuple[str, Any]]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if not isinstance(key, str):
+                fail("configuration contains an unsupported key")
+            yield from flatten_leaves(child, prefix + (key,))
+    else:
+        if not prefix:
+            fail("configuration contains an unsupported value")
+        yield ".".join(prefix), value
+
+
+def load_owned_policy() -> Tuple[Any, Dict[str, Any], List[str], bytes]:
+    config_bytes = read_regular(CONFIG_SOURCE, required=True, limit=MAX_REPO_BYTES)
+    owned_bytes = read_regular(OWNED_SOURCE, required=True, limit=MAX_REPO_BYTES)
+    assert config_bytes is not None and owned_bytes is not None
+    try:
+        lines = owned_bytes.decode("ascii").splitlines()
+    except UnicodeDecodeError:
+        fail("owned-key manifest is not ASCII")
+    owned = [line.strip() for line in lines if line.strip()]
+    if len(owned) != len(set(owned)) or set(owned) != EXPECTED_OWNED_KEYS:
+        fail("owned-key manifest does not match the reviewed allowlist")
+    document = parse_toml(config_bytes)
+    values = semantic(document)
+    baseline_keys = {key for key, _ in flatten_leaves(values)}
+    if baseline_keys != set(owned):
+        fail("owned configuration and key manifest disagree")
+    return document, values, owned, config_bytes
+
+
+def get_nested(mapping: Mapping[str, Any], dotted: str) -> Any:
+    current: Any = mapping
+    for part in dotted.split("."):
+        if not isinstance(current, Mapping) or part not in current:
+            fail("owned configuration is internally inconsistent")
+        current = current[part]
+    return current
+
+
+def set_nested(document: Any, dotted: str, value: Any) -> None:
+    parts = dotted.split(".")
+    current = document
+    for part in parts[:-1]:
+        if part not in current:
+            current.add(part, tomlkit.table())
+        child = current[part]
+        if not isinstance(child, MutableMapping):
+            fail("an owned configuration path conflicts with an existing value")
+        current = child
+    current[parts[-1]] = copy.deepcopy(value)
+
+
+def remove_nested(mapping: Dict[str, Any], dotted: str) -> None:
+    parts = dotted.split(".")
+    stack: List[Tuple[Dict[str, Any], str]] = []
+    current: Any = mapping
+    for part in parts[:-1]:
+        if not isinstance(current, dict) or part not in current:
+            return
+        stack.append((current, part))
+        current = current[part]
+    if isinstance(current, dict):
+        current.pop(parts[-1], None)
+    for parent, part in reversed(stack):
+        child = parent.get(part)
+        if isinstance(child, dict) and not child:
+            parent.pop(part, None)
+        else:
+            break
+
+
+def without_owned(value: Dict[str, Any], owned: Sequence[str]) -> Dict[str, Any]:
+    result = copy.deepcopy(value)
+    for dotted in owned:
+        remove_nested(result, dotted)
+    return result
+
+
+def candidate_config(before: Optional[bytes]) -> bytes:
+    _, wanted, owned, baseline_bytes = load_owned_policy()
+    if before is None:
+        return baseline_bytes
+    document = parse_toml(before)
+    before_semantic = semantic(document)
+    for dotted in owned:
+        set_nested(document, dotted, get_nested(wanted, dotted))
+    try:
+        rendered = tomlkit.dumps(document).encode("utf-8")
+    except Exception:
+        fail("updated configuration cannot be serialized safely")
+    after_document = parse_toml(rendered)
+    after_semantic = semantic(after_document)
+    if without_owned(before_semantic, owned) != without_owned(after_semantic, owned):
+        fail("updating owned keys would alter unrelated configuration")
+    for dotted in owned:
+        if get_nested(after_semantic, dotted) != get_nested(wanted, dotted):
+            fail("updated configuration failed owned-key verification")
+    return rendered
+
+
+def target_mode(path: Path, default: int) -> int:
+    if not lexists(path):
+        return default
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("a managed file mode cannot be inspected")
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail("a managed file has an unsafe filesystem type")
+    return stat.S_IMODE(info.st_mode)
+
+
+def state_root(home: Path) -> Path:
+    return home / ".codex-policy"
+
+
+def transaction_root(home: Path) -> Path:
+    return state_root(home) / "transactions"
+
+
+def load_journal(path: Path) -> Dict[str, Any]:
+    raw = read_regular(path, required=True, limit=MAX_REPO_BYTES)
+    assert raw is not None
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except Exception:
+        fail("a local policy transaction journal is invalid")
+    if not isinstance(value, dict) or value.get("schema") != SCHEMA:
+        fail("a local policy transaction journal is unsupported")
+    return value
+
+
+def journals(home: Path) -> List[Tuple[Path, Dict[str, Any]]]:
+    state = state_root(home)
+    if lexists(state):
+        try:
+            state_info = state.lstat()
+        except OSError:
+            fail("local policy transaction state cannot be inspected")
+        if stat.S_ISLNK(state_info.st_mode) or not stat.S_ISDIR(state_info.st_mode):
+            fail("local policy transaction state has an unsafe filesystem type")
+    root = transaction_root(home)
+    if not lexists(root):
+        return []
+    try:
+        info = root.lstat()
+    except OSError:
+        fail("local policy transaction state cannot be inspected")
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+        fail("local policy transaction state has an unsafe filesystem type")
+    result: List[Tuple[Path, Dict[str, Any]]] = []
+    try:
+        entries = sorted(root.iterdir(), key=lambda item: item.name)
+    except OSError:
+        fail("local policy transaction state cannot be listed")
+    for entry in entries:
+        try:
+            entry_info = entry.lstat()
+        except OSError:
+            fail("local policy transaction state cannot be inspected")
+        if stat.S_ISLNK(entry_info.st_mode) or not stat.S_ISDIR(entry_info.st_mode):
+            fail("local policy transaction state contains an unsafe entry")
+        result.append((entry, load_journal(entry / "state.json")))
+    return result
+
+
+def incomplete_journals(home: Path) -> List[Tuple[Path, Dict[str, Any]]]:
+    return [(path, item) for path, item in journals(home) if item.get("state") in INCOMPLETE_STATES]
+
+
+def build_plan(home: Path) -> InstallPlan:
+    if lexists(home):
+        try:
+            info = home.lstat()
+        except OSError:
+            fail("Codex home cannot be inspected")
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            fail("Codex home has an unsafe filesystem type")
+    policy_after = read_regular(POLICY_SOURCE, required=True, limit=MAX_REPO_BYTES)
+    assert policy_after is not None
+    policy_target = home / "AGENTS.md"
+    config_target = home / "config.toml"
+    policy_before = read_regular(policy_target, required=False, limit=MAX_TARGET_BYTES)
+    config_before = read_regular(config_target, required=False, limit=MAX_TARGET_BYTES)
+    files = [
+        FilePlan("AGENTS.md", policy_before, policy_after, target_mode(policy_target, 0o644)),
+        FilePlan("config.toml", config_before, candidate_config(config_before), target_mode(config_target, 0o600)),
+    ]
+    return InstallPlan(
+        files=files,
+        override_present=lexists(home / "AGENTS.override.md"),
+        recovery_required=bool(incomplete_journals(home)),
+    )
+
+
+def plan_report(plan: InstallPlan) -> Dict[str, Any]:
+    by_name = {item.name: item for item in plan.files}
+    action = "blocked" if plan.blocked else ("update" if plan.changed else "none")
+    return {
+        "schema": SCHEMA,
+        "global_policy": by_name["AGENTS.md"].status,
+        "managed_config": by_name["config.toml"].status,
+        "override": "blocking" if plan.override_present else "absent",
+        "transaction": "recovery_required" if plan.recovery_required else "clean",
+        "action": action,
+    }
+
+
+def print_report(title: str, report: Mapping[str, Any], json_mode: bool) -> None:
+    if json_mode:
+        print(json.dumps(dict(report), sort_keys=True, separators=(",", ":")))
+        return
+    print(title)
+    labels = {
+        "global_policy": "global policy",
+        "managed_config": "managed config",
+        "override": "override",
+        "transaction": "transaction",
+        "action": "action",
+        "codex_cli": "Codex CLI",
+        "codex_doctor": "Codex diagnostic",
+        "codex_diagnostic_categories": "diagnostic categories",
+        "repository_audit": "repository audit",
+    }
+    for key, value in report.items():
+        if key == "schema":
+            continue
+        print("{}: {}".format(labels.get(key, key.replace("_", " ")), value))
+
+
+def fsync_directory(path: Path) -> None:
+    flags = os.O_RDONLY
+    if hasattr(os, "O_DIRECTORY"):
+        flags |= os.O_DIRECTORY
+    try:
+        descriptor = os.open(str(path), flags)
+    except OSError:
+        fail("a target directory cannot be synchronized")
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        fail("a target directory cannot be synchronized")
+    finally:
+        os.close(descriptor)
+
+
+def atomic_write(path: Path, data: bytes, mode: int) -> None:
+    descriptor = -1
+    temporary: Optional[str] = None
+    try:
+        descriptor, temporary = tempfile.mkstemp(prefix=".codex-policy-", dir=str(path.parent))
+        os.fchmod(descriptor, mode)
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, str(path))
+        temporary = None
+        fsync_directory(path.parent)
+    except PolicyError:
+        raise
+    except Exception:
+        fail("an atomic file update failed")
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+
+
+def write_journal(directory: Path, value: Mapping[str, Any]) -> None:
+    data = (json.dumps(dict(value), sort_keys=True, separators=(",", ":")) + "\n").encode("utf-8")
+    atomic_write(directory / "state.json", data, 0o600)
+
+
+def ensure_home_for_write(home: Path) -> None:
+    if lexists(home):
+        try:
+            info = home.lstat()
+        except OSError:
+            fail("Codex home cannot be inspected")
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            fail("Codex home has an unsafe filesystem type")
+        return
+    try:
+        home.mkdir(parents=True, mode=0o700)
+    except OSError:
+        fail("Codex home cannot be created")
+
+
+class Lock:
+    def __init__(self, home: Path):
+        self.path = home / ".codex-policy.lock"
+        self.descriptor: Optional[int] = None
+
+    def __enter__(self) -> "Lock":
+        if fcntl is None:
+            fail("this platform does not provide the required advisory lock")
+        flags = os.O_RDWR | os.O_CREAT
+        if hasattr(os, "O_NOFOLLOW"):
+            flags |= os.O_NOFOLLOW
+        descriptor: Optional[int] = None
+        try:
+            descriptor = os.open(str(self.path), flags, 0o600)
+            info = os.fstat(descriptor)
+            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.geteuid():
+                os.close(descriptor)
+                fail("the policy update lock has an unsafe filesystem type")
+            os.fchmod(descriptor, 0o600)
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            self.descriptor = descriptor
+        except BlockingIOError:
+            if descriptor is not None:
+                os.close(descriptor)
+            fail("another policy operation holds the update lock")
+        except PolicyError:
+            raise
+        except OSError:
+            if descriptor is not None:
+                os.close(descriptor)
+            fail("the policy update lock cannot be acquired")
+        return self
+
+    def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
+        if self.descriptor is not None:
+            try:
+                fcntl.flock(self.descriptor, fcntl.LOCK_UN)
+            except OSError:
+                pass
+            os.close(self.descriptor)
+            self.descriptor = None
+
+
+def current_bytes(home: Path, name: str) -> Optional[bytes]:
+    return read_regular(home / name, required=False, limit=MAX_TARGET_BYTES)
+
+
+def verify_snapshot(home: Path, item: FilePlan) -> None:
+    if current_bytes(home, item.name) != item.before:
+        fail("a managed file changed concurrently; no update was made")
+
+
+def make_transaction(home: Path, plan: InstallPlan) -> Tuple[Path, Dict[str, Any]]:
+    root = transaction_root(home)
+    try:
+        state = state_root(home)
+        if lexists(state):
+            state_info = state.lstat()
+            if stat.S_ISLNK(state_info.st_mode) or not stat.S_ISDIR(state_info.st_mode):
+                fail("private transaction storage has an unsafe filesystem type")
+        else:
+            state.mkdir(mode=0o700)
+        os.chmod(str(state), 0o700)
+        root.mkdir(mode=0o700, exist_ok=True)
+        root_info = root.lstat()
+        if stat.S_ISLNK(root_info.st_mode) or not stat.S_ISDIR(root_info.st_mode):
+            fail("private transaction storage has an unsafe filesystem type")
+        os.chmod(str(root), 0o700)
+    except PolicyError:
+        raise
+    except OSError:
+        fail("private transaction storage cannot be created")
+    txid = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()) + "-{:08x}".format(os.getpid())
+    directory = root / txid
+    suffix = 0
+    while lexists(directory):
+        suffix += 1
+        directory = root / (txid + "-{}".format(suffix))
+    try:
+        directory.mkdir(mode=0o700)
+    except OSError:
+        fail("private transaction storage cannot be created")
+    records: Dict[str, Any] = {}
+    for item in plan.files:
+        if not item.changed:
+            continue
+        records[item.name] = {
+            "before_present": item.before is not None,
+            "before_sha256": sha256(item.before),
+            "after_sha256": sha256(item.after),
+            "mode": item.mode,
+        }
+        if item.before is not None:
+            atomic_write(directory / (item.name + ".before"), item.before, 0o600)
+    journal = {
+        "schema": SCHEMA,
+        "kind": "apply",
+        "state": "prepared",
+        "files": records,
+        "replaced": [],
+    }
+    write_journal(directory, journal)
+    return directory, journal
+
+
+def restore_before(home: Path, directory: Path, name: str, record: Mapping[str, Any]) -> None:
+    target = home / name
+    if record.get("before_present"):
+        backup = read_regular(directory / (name + ".before"), required=True, limit=MAX_TARGET_BYTES)
+        assert backup is not None
+        if sha256(backup) != record.get("before_sha256"):
+            fail("a private transaction backup failed integrity verification")
+        atomic_write(target, backup, int(record["mode"]))
+    elif lexists(target):
+        try:
+            info = target.lstat()
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+                fail("a managed file has an unsafe filesystem type")
+            target.unlink()
+            fsync_directory(home)
+        except PolicyError:
+            raise
+        except OSError:
+            fail("an interrupted update cannot be restored safely")
+
+
+def apply_plan(home: Path) -> str:
+    ensure_home_for_write(home)
+    with Lock(home):
+        plan = build_plan(home)
+        if plan.override_present:
+            fail("AGENTS.override.md shadows the global policy; installation is blocked")
+        if plan.recovery_required:
+            fail("an interrupted transaction requires recovery before installation")
+        if not plan.changed:
+            return "none"
+        directory, journal = make_transaction(home, plan)
+        replaced: List[str] = []
+        try:
+            journal["state"] = "applying"
+            write_journal(directory, journal)
+            for item in plan.files:
+                if not item.changed:
+                    continue
+                verify_snapshot(home, item)
+                replaced.append(item.name)
+                atomic_write(home / item.name, item.after, item.mode)
+                journal["replaced"] = list(replaced)
+                write_journal(directory, journal)
+                fail_after = os.environ.get("CODEX_POLICY_TEST_FAIL_AFTER")
+                if fail_after and len(replaced) >= int(fail_after):
+                    raise RuntimeError("injected failure")
+            for item in plan.files:
+                if current_bytes(home, item.name) != item.after:
+                    fail("post-install verification failed")
+            if lexists(home / "AGENTS.override.md"):
+                fail("post-install verification failed")
+            journal["state"] = "complete"
+            write_journal(directory, journal)
+            return "updated"
+        except Exception:
+            rollback_failed = False
+            for name in reversed(replaced):
+                try:
+                    restore_before(home, directory, name, journal["files"][name])
+                except Exception:
+                    rollback_failed = True
+            journal["state"] = "recovery_required" if rollback_failed else "rolled_back"
+            try:
+                write_journal(directory, journal)
+            except Exception:
+                rollback_failed = True
+            if rollback_failed:
+                fail("installation failed and requires manual recovery")
+            fail("installation failed; original files were restored")
+    return "none"
+
+
+def validate_journal_files(value: Mapping[str, Any]) -> Dict[str, Mapping[str, Any]]:
+    files = value.get("files")
+    if not isinstance(files, dict) or not files:
+        fail("a local policy transaction journal is invalid")
+    if not set(files).issubset(set(TARGET_NAMES)):
+        fail("a local policy transaction journal has an unsafe target")
+    result: Dict[str, Mapping[str, Any]] = {}
+    for name, record in files.items():
+        if not isinstance(record, dict):
+            fail("a local policy transaction journal is invalid")
+        if not isinstance(record.get("mode"), int):
+            fail("a local policy transaction journal is invalid")
+        result[name] = record
+    return result
+
+
+def recover_pending(home: Path, apply: bool) -> str:
+    pending = incomplete_journals(home)
+    if not pending:
+        return "none"
+    if not apply:
+        return "required"
+    ensure_home_for_write(home)
+    with Lock(home):
+        pending = incomplete_journals(home)
+        for directory, journal in pending:
+            files = validate_journal_files(journal)
+            for name, record in files.items():
+                current = current_bytes(home, name)
+                digest = sha256(current)
+                before_digest = record.get("before_sha256")
+                after_digest = record.get("after_sha256")
+                if digest not in {before_digest, after_digest}:
+                    fail("recovery stopped because a managed file changed independently")
+            for name, record in files.items():
+                if sha256(current_bytes(home, name)) == record.get("after_sha256"):
+                    restore_before(home, directory, name, record)
+            journal["state"] = "recovered"
+            write_journal(directory, journal)
+    return "recovered"
+
+
+def sensitive_patterns() -> List[Tuple[str, re.Pattern[str]]]:
+    return [
+        ("private key", re.compile("-" * 5 + r"BEGIN [A-Z0-9 ]*PRIVATE KEY" + "-" * 5)),
+        (
+            "credential assignment",
+            re.compile(
+                r"(?i)(?:api[_-]?key|access[_-]?token|refresh[_-]?token|auth[_-]?token|"
+                r"client[_-]?secret|password|passwd|authorization|cookie|credential)"
+                r"[[:space:]]*[:=]".replace("[[:space:]]", r"\s")
+            ),
+        ),
+        ("OpenAI token", re.compile(r"sk-(?:proj-)?[A-Za-z0-9_-]{20,}")),
+        ("GitHub token", re.compile(r"(?:github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})")),
+        ("AWS key", re.compile(r"(?:AKIA|ASIA)[0-9A-Z]{16}")),
+        ("Google key", re.compile(r"AIza[0-9A-Za-z_-]{30,}")),
+        ("Slack token", re.compile(r"xox[baprs]-[A-Za-z0-9-]{10,}")),
+        ("bearer token", re.compile(r"(?i)Bearer\s+[0-9A-Za-z._~+/-]{16,}")),
+        ("JWT", re.compile(r"eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}")),
+        ("URL credential", re.compile(r"https?://[^/@\s]+:[^/@\s]+@")),
+        ("URL secret", re.compile(r"https?://[^\s]+[?&](?:token|key|secret|sig|signature|auth)=")),
+        ("macOS home path", re.compile("/" + r"Users/[^/\"'\s]+")),
+        ("Linux home path", re.compile("/" + r"home/[^/\"'\s]+")),
+        ("macOS temporary path", re.compile("/" + r"private/var/folders/")),
+        ("mounted volume path", re.compile("/" + r"Volumes/")),
+        ("application path", re.compile("/" + r"Applications/")),
+        ("Windows home path", re.compile(r"[A-Z]:\\Users\\", re.IGNORECASE)),
+        ("email address", re.compile(r"[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}", re.IGNORECASE)),
+        ("project trust", re.compile(r"(?m)^\s*\[projects\.")),
+        ("trust assignment", re.compile(r"(?m)^\s*trust_level\s*=")),
+        ("approval assignment", re.compile(r"(?m)^\s*approval_policy\s*=")),
+        ("sandbox assignment", re.compile(r"(?m)^\s*sandbox_mode\s*=")),
+        ("warning suppression", re.compile(r"(?m)^\s*hide_full_access_warning\s*=")),
+    ]
+
+
+def scan_public_bytes(data: bytes) -> None:
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("repository audit found a binary or non-UTF-8 artifact")
+    for label, pattern in sensitive_patterns():
+        if pattern.search(text):
+            fail("repository audit found prohibited {} content".format(label))
+
+
+def repository_files() -> Dict[str, Path]:
+    found: Dict[str, Path] = {}
+    for root, directories, files in os.walk(str(REPO_ROOT), followlinks=False):
+        root_path = Path(root)
+        directories[:] = [name for name in directories if not (root_path == REPO_ROOT and name == ".git")]
+        for name in list(directories):
+            candidate = root_path / name
+            if candidate.is_symlink():
+                fail("repository audit found a symlink")
+        for name in files:
+            path = root_path / name
+            relative = path.relative_to(REPO_ROOT).as_posix()
+            found[relative] = path
+    return found
+
+
+def run_git(args: Sequence[str], *, binary: bool = False) -> Any:
+    try:
+        result = subprocess.run(
+            ["git"] + list(args),
+            cwd=str(REPO_ROOT),
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            check=False,
+        )
+    except OSError:
+        fail("repository audit cannot run Git")
+    if result.returncode != 0:
+        fail("repository audit encountered invalid Git state")
+    return result.stdout if binary else result.stdout.decode("utf-8", "strict")
+
+
+def audit_git_history() -> None:
+    git_dir = REPO_ROOT / ".git"
+    if not git_dir.exists():
+        return
+    if git_dir.is_symlink() or not git_dir.is_dir():
+        fail("repository audit found unsafe Git metadata")
+    staged = run_git(["ls-files", "--stage", "-z"], binary=True)
+    tracked: Set[str] = set()
+    for record in staged.split(b"\0"):
+        if not record:
+            continue
+        try:
+            header, raw_path = record.split(b"\t", 1)
+            mode = header.split(b" ", 1)[0].decode("ascii")
+            path = raw_path.decode("utf-8")
+        except Exception:
+            fail("repository audit found unsupported Git index data")
+        tracked.add(path)
+        if path not in EXPECTED_FILES:
+            fail("repository audit found a non-allowlisted tracked path")
+        wanted_mode = "100755" if path == "bin/codex-policy" else "100644"
+        if mode != wanted_mode:
+            fail("repository audit found an unsafe Git file mode")
+    head = subprocess.run(
+        ["git", "rev-parse", "--verify", "HEAD"],
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if head.returncode == 0 and tracked != EXPECTED_FILES:
+        fail("repository audit found an incomplete tracked allowlist")
+    refs = run_git(["for-each-ref", "--format=%(refname) %(symref)"]).splitlines()
+    allowed_refs = {"refs/heads/main", "refs/remotes/origin/main"}
+    for row in refs:
+        ref, _, symbolic_target = row.partition(" ")
+        symbolic_target = symbolic_target.strip()
+        if ref in allowed_refs and not symbolic_target:
+            continue
+        if ref == "refs/remotes/origin/HEAD" and symbolic_target == "refs/remotes/origin/main":
+            continue
+        fail("repository audit found a non-allowlisted Git reference")
+    remotes = run_git(["remote"]).splitlines()
+    if any(name != "origin" for name in remotes):
+        fail("repository audit found an unexpected Git remote")
+    if "origin" in remotes:
+        url = run_git(["remote", "get-url", "origin"]).strip()
+        allowed_urls = {
+            "https://github.com/taekimax/codex-policy.git",
+        }
+        if url not in allowed_urls:
+            fail("repository audit found an unexpected origin URL")
+    objects = run_git(["rev-list", "--objects", "--all"]).splitlines()
+    seen: Set[str] = set()
+    for row in objects:
+        object_id = row.split(" ", 1)[0]
+        if object_id in seen:
+            continue
+        seen.add(object_id)
+        kind = run_git(["cat-file", "-t", object_id]).strip()
+        if kind != "blob":
+            continue
+        size_text = run_git(["cat-file", "-s", object_id]).strip()
+        try:
+            size = int(size_text)
+        except ValueError:
+            fail("repository audit found invalid Git object metadata")
+        if size > MAX_REPO_BYTES:
+            fail("repository audit found an oversized historical blob")
+        scan_public_bytes(run_git(["cat-file", "blob", object_id], binary=True))
+    if head.returncode == 0:
+        scan_public_bytes(run_git(["log", "--all", "--format=%B%x00"], binary=True))
+
+
+def audit_repository() -> None:
+    found = repository_files()
+    if set(found) != EXPECTED_FILES:
+        fail("repository audit found a missing or non-allowlisted filesystem path")
+    for relative, path in found.items():
+        try:
+            info = path.lstat()
+        except OSError:
+            fail("repository audit cannot inspect an artifact")
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            fail("repository audit found an unsafe filesystem type")
+        if info.st_size > MAX_REPO_BYTES:
+            fail("repository audit found an oversized artifact")
+        executable = bool(stat.S_IMODE(info.st_mode) & 0o111)
+        if executable != (relative == "bin/codex-policy"):
+            fail("repository audit found an unsafe executable mode")
+        data = read_regular(path, required=True, limit=MAX_REPO_BYTES)
+        assert data is not None
+        scan_public_bytes(data)
+    policy = read_regular(POLICY_SOURCE, required=True, limit=MAX_REPO_BYTES)
+    assert policy is not None
+    if sha256(policy) != "a57be8be389af11a017446f900502c6def504faa04f488e66181ccf811694671":
+        fail("deployable global policy differs from the reviewed session artifact")
+    load_owned_policy()
+    audit_git_history()
+
+
+def command_plan(args: argparse.Namespace) -> int:
+    plan = build_plan(home_path())
+    report = plan_report(plan)
+    print_report("codex-policy plan", report, args.json)
+    return 1 if args.check and (plan.changed or plan.blocked) else 0
+
+
+def command_verify(args: argparse.Namespace) -> int:
+    plan = build_plan(home_path())
+    report = plan_report(plan)
+    report["verified"] = "passed" if not plan.changed and not plan.blocked else "failed"
+    print_report("codex-policy verify", report, args.json)
+    return 0 if report["verified"] == "passed" else 1
+
+
+def command_doctor(args: argparse.Namespace) -> int:
+    plan = build_plan(home_path())
+    report = plan_report(plan)
+    executable = shutil.which("codex")
+    report["codex_cli"] = "available" if executable else "unavailable"
+    if executable:
+        environment = os.environ.copy()
+        environment["CODEX_HOME"] = str(home_path())
+        try:
+            result = subprocess.run(
+                [executable, "doctor", "--json"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.DEVNULL,
+                env=environment,
+                timeout=60,
+                check=False,
+            )
+            payload = json.loads(result.stdout.decode("utf-8"))
+            checks = payload.get("checks", {}) if isinstance(payload, dict) else {}
+            categories: Dict[str, str] = {}
+            if isinstance(checks, dict):
+                for check in checks.values():
+                    if not isinstance(check, dict):
+                        continue
+                    category = check.get("category")
+                    status_value = check.get("status")
+                    if status_value == "ok":
+                        continue
+                    if isinstance(category, str) and isinstance(status_value, str):
+                        if re.fullmatch(r"[a-z0-9-]+", category) and re.fullmatch(r"[a-z]+", status_value):
+                            categories[category] = status_value
+            report["codex_doctor"] = "passed" if result.returncode == 0 else "issues"
+            if categories:
+                report["codex_diagnostic_categories"] = ",".join(
+                    "{}={}".format(key, categories[key]) for key in sorted(categories)
+                )
+        except Exception:
+            report["codex_doctor"] = "failed"
+    else:
+        report["codex_doctor"] = "unavailable"
+    try:
+        audit_repository()
+        report["repository_audit"] = "passed"
+    except PolicyError:
+        report["repository_audit"] = "failed"
+    print_report("codex-policy doctor", report, args.json)
+    bad = plan.changed or plan.blocked or report["codex_doctor"] != "passed" or report["repository_audit"] != "passed"
+    return 1 if bad else 0
+
+
+def require_apply_confirmation(args: argparse.Namespace) -> None:
+    if not getattr(args, "yes", False):
+        fail("write operation requires the explicit --yes flag")
+
+
+def command_apply(args: argparse.Namespace) -> int:
+    require_apply_confirmation(args)
+    result = apply_plan(home_path())
+    print("codex-policy apply")
+    print("result: {}".format(result))
+    print("next: start a new Codex session after verify passes")
+    return 0
+
+
+def command_recover(args: argparse.Namespace) -> int:
+    if args.apply:
+        require_apply_confirmation(args)
+    result = recover_pending(home_path(), args.apply)
+    print("codex-policy recover")
+    print("result: {}".format(result))
+    return 0
+
+
+def command_audit_repo(args: argparse.Namespace) -> int:
+    del args
+    audit_repository()
+    print("repository audit: passed")
+    return 0
+
+
+def parser() -> argparse.ArgumentParser:
+    root = argparse.ArgumentParser(prog="codex-policy", description="Safely diagnose and update portable global Codex policy")
+    commands = root.add_subparsers(dest="command")
+    plan = commands.add_parser("plan", help="show a read-only update plan")
+    plan.add_argument("--json", action="store_true")
+    plan.add_argument("--check", action="store_true", help="return nonzero when drift or a blocker exists")
+    plan.set_defaults(handler=command_plan)
+    doctor = commands.add_parser("doctor", help="run sanitized policy and Codex diagnostics")
+    doctor.add_argument("--json", action="store_true")
+    doctor.set_defaults(handler=command_doctor)
+    apply = commands.add_parser("apply", help="transactionally install the managed policy")
+    apply.add_argument("--yes", action="store_true", help="confirm the write")
+    apply.set_defaults(handler=command_apply)
+    verify = commands.add_parser("verify", help="verify that managed policy is current")
+    verify.add_argument("--json", action="store_true")
+    verify.set_defaults(handler=command_verify)
+    recover = commands.add_parser("recover", help="preview or restore an interrupted update")
+    recover.add_argument("--apply", action="store_true", help="perform recovery")
+    recover.add_argument("--yes", action="store_true", help="confirm the write")
+    recover.set_defaults(handler=command_recover)
+    audit = commands.add_parser("audit-repo", help="audit the public repository and reachable history")
+    audit.set_defaults(handler=command_audit_repo)
+    return root
+
+
+def main(argv: Optional[Sequence[str]] = None) -> int:
+    if sys.version_info < (3, 9):
+        fail("Python 3.9 or newer is required")
+    if fcntl is None:
+        fail("macOS or Linux is required")
+    arguments = parser().parse_args(argv)
+    if arguments.command is None:
+        arguments = parser().parse_args(["plan"])
+    return int(arguments.handler(arguments))
+
+
+if __name__ == "__main__":
+    try:
+        raise SystemExit(main())
+    except PolicyError as error:
+        print("codex-policy: {}".format(error), file=sys.stderr)
+        raise SystemExit(2)
