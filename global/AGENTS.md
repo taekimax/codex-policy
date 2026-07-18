@@ -61,6 +61,6 @@ Never invoke it when `ORACLE_SOLVER_ACTIVE=1`, and never substitute another mode
 
 ## GitHub
 
-- On this host, prefer SSH for authenticated GitHub Git operations, retain `gh` OAuth for GitHub API operations, and keep HTTPS available for anonymous public clones and CI.
-- Before material external writes, verify the active identity when a mismatch is plausible. Treat restricted-sandbox network or Keychain failures as inconclusive until checked outside the sandbox.
-- Never expose credentials or alter authentication or scopes merely to work around a transport mismatch.
+- Use SSH for authenticated GitHub clone, fetch, pull, and push operations; keep HTTPS for anonymous public clones and CI.
+- Use existing `gh` OAuth for GitHub API operations. Verify the active account before material external writes when a mismatch is plausible.
+- Treat restricted-sandbox network or Keychain failures as inconclusive until verified live. Never expose credentials or change authentication or scopes to solve a Git transport mismatch.

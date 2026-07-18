@@ -391,7 +391,7 @@ class CodexPolicyAcceptance(unittest.TestCase):
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "9f1521c1aedbcbd7342e940e662c39c078cf297371b37ac326984d5eee3f23db",
+            "cc5ad2ca70d0966f7489b99080dd3f60cfe6723931e3390cb1ce00cc79e1b696",
         )
 
 

@@ -865,7 +865,7 @@ def audit_repository() -> None:
         scan_public_bytes(data)
     policy = read_regular(POLICY_SOURCE, required=True, limit=MAX_REPO_BYTES)
     assert policy is not None
-    if sha256(policy) != "9f1521c1aedbcbd7342e940e662c39c078cf297371b37ac326984d5eee3f23db":
+    if sha256(policy) != "cc5ad2ca70d0966f7489b99080dd3f60cfe6723931e3390cb1ce00cc79e1b696":
         fail("deployable global policy differs from the reviewed session artifact")
     load_owned_policy()
     audit_git_history()
