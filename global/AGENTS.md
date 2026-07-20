@@ -24,6 +24,8 @@ For every task, autonomously use the smallest effective form of:
 
 Scale the harness to the task. Decide from the work and observed failures whether subagents, role separation, explicit acceptance criteria, durable state, traces, rubrics, retries, or checkpoints materially improve reliability or continuity. Do not impose fixed role counts, checklist sizes, filenames, or ceremony.
 
+Prefer falsification-driven progress: when a plausible theory is low-risk and sufficiently supported, proceed on it as a working assumption and narrow the hypothesis only when contrary evidence appears, rather than exhaustively proving every likely premise up front.
+
 For extended or resumable work, keep the minimum safe continuation state using project conventions. After compaction or resumption, re-anchor from current intent and authoritative artifacts: outcome, constraints, decisions, progress and evidence, verification status, and next step. Never store secrets. Inspect evidence before retrying; do not repeat an unchanged failed method. Restart only within existing scope, permissions, budget, and side-effect boundaries, preserving user work.
 
 Completion requires real verification appropriate to the task. Review the final result, diff, or behavior against the request; report what passed, failed, or was not run; and expose remaining uncertainty.
