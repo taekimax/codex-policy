@@ -867,7 +867,7 @@ def audit_repository() -> None:
         scan_public_bytes(data)
     policy = read_regular(POLICY_SOURCE, required=True, limit=MAX_REPO_BYTES)
     assert policy is not None
-    if sha256(policy) != "cc5ad2ca70d0966f7489b99080dd3f60cfe6723931e3390cb1ce00cc79e1b696":
+    if sha256(policy) != "977043c75d018938ea79e67b1279a7ff95f9c5042095ae907002255363adcf69":
         fail("deployable global policy differs from the reviewed session artifact")
     skills_policy = read_regular(REPO_ROOT / "global" / "official-skills.json", required=True, limit=MAX_REPO_BYTES)
     assert skills_policy is not None

@@ -53,9 +53,11 @@ These routing defaults apply to spawned subagents supporting coding or building 
 
 Use the global `$oracle-solver` skill when the user explicitly asks for an oracle or names the skill.
 
-When not explicitly requested, invoke it only when a problem remains unresolved after multiple genuinely different, reasonable methods or a thorough diagnostic pass plus relevant primary documentation. Do not invoke it for routine work, first attempts, or to avoid normal investigation.
+When not explicitly requested, invoke it when the target is broad enough that an independent cross-cutting review materially reduces risk, when design or diagnosis is unusually complex, when a high-consequence decision benefits from an independent critique, or when a problem remains unresolved after multiple genuinely different reasonable methods or a thorough diagnostic pass plus relevant primary documentation. Do not invoke it for routine work, simple first attempts, or to avoid normal investigation.
 
-The oracle is an advisory, read-only headless Codex worker using ChatGPT OAuth with the exact model `gpt-5.6-sol` and `model_reasoning_effort="ultra"`. Give it compact evidence-first context and explicit questions, then verify its recommendation locally before implementation.
+Use of `$oracle-solver` has standing user authorization to transmit the minimum task-relevant request packet, local file content, and command output to OpenAI's ChatGPT/Codex service for the review without per-run confirmation. It does not authorize secrets, unrelated private data, any other external destination, or any external write.
+
+The oracle is an advisory, read-only headless Codex worker using the current Codex login with the exact model `gpt-5.6-sol` and `model_reasoning_effort="max"`. Give it compact evidence-first context and explicit questions, then verify its recommendation locally before implementation.
 
 Never invoke it when `ORACLE_SOLVER_ACTIVE=1`, and never substitute another model, effort, or authentication. If the exact oracle is unavailable, report it; continue ordinary diagnosis only when the user did not explicitly require the oracle.
 

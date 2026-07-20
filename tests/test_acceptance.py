@@ -946,7 +946,7 @@ raise SystemExit(2)
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "cc5ad2ca70d0966f7489b99080dd3f60cfe6723931e3390cb1ce00cc79e1b696",
+            "977043c75d018938ea79e67b1279a7ff95f9c5042095ae907002255363adcf69",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
