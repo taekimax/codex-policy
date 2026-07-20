@@ -118,6 +118,9 @@
     {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-notification-triage"},
     {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-outgoing-message"},
     {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-reply-drafting"},
+    {"kind": "codex-user", "skill": "code-auditor"},
+    {"kind": "codex-user", "skill": "feature-implementing"},
+    {"kind": "codex-user", "skill": "test-fixing"},
     {"kind": "user", "skill": "find-skills"},
     {"kind": "user", "skill": "web-design-guidelines"}
   ],

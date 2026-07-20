@@ -538,6 +538,33 @@ raise SystemExit(2)
         verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(verified.returncode, 0, verified.stderr)
 
+    def test_official_skills_disables_retired_codex_home_skills_and_survives_removal(self) -> None:
+        environment = self.make_current_skills_environment()
+        retired = ("code-auditor", "feature-implementing", "test-fixing")
+        paths = []
+        for skill in retired:
+            path = self.home / "skills" / skill / "SKILL.md"
+            self.write_skill(path)
+            paths.append(path)
+
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
+        for path in paths:
+            self.assertIn(str(path), config)
+        self.assertEqual(config.count("enabled = false"), 6)
+
+        for path in paths:
+            path.unlink()
+            path.parent.rmdir()
+
+        verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(json.loads(verified.stdout)["verified"], "passed")
+        second = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("result: none", second.stdout)
+
     def test_official_skills_prefers_active_plugin_cache_paths(self) -> None:
         environment = self.make_current_skills_environment()
         disabled = {
@@ -923,7 +950,7 @@ raise SystemExit(2)
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "ab0e34be78398aaf4874c963029914b4a04e858e109a02aba768e4d63e44eb84",
+            "f1eb23bd42961b4230fb1347920f846c4729470400511fa76082b05ee19db24e",
         )
 
 

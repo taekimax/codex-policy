@@ -249,6 +249,9 @@ def load_manifest() -> Dict[str, Any]:
         ("connector-cache", "slack", "openai-curated-remote", "slack-notification-triage"),
         ("connector-cache", "slack", "openai-curated-remote", "slack-outgoing-message"),
         ("connector-cache", "slack", "openai-curated-remote", "slack-reply-drafting"),
+        ("codex-user", "", "", "code-auditor"),
+        ("codex-user", "", "", "feature-implementing"),
+        ("codex-user", "", "", "test-fixing"),
         ("user", "", "", "find-skills"),
         ("user", "", "", "web-design-guidelines"),
     }
@@ -417,10 +420,13 @@ def desired_disabled_paths(
         elif kind == "user":
             root = user_home() / ".agents" / "skills"
             candidate = root / skill / "SKILL.md"
+        elif kind == "codex-user":
+            root = home / "skills"
+            candidate = root / skill / "SKILL.md"
         else:
             fail("the disabled-skill policy contains an unsupported source")
         if candidate is not None and root is not None:
-            anchor = home if kind == "connector-cache" else (user_home() if kind == "user" else root)
+            anchor = home if kind in {"connector-cache", "codex-user"} else (user_home() if kind == "user" else root)
             inspected = safe_skill_file(anchor, candidate)
             if inspected is not None:
                 paths.append(inspected)
@@ -470,6 +476,8 @@ def path_matches_spec(
     skill = spec["skill"]
     if spec["kind"] == "user":
         return path == user_home() / ".agents" / "skills" / skill / "SKILL.md"
+    if spec["kind"] == "codex-user":
+        return path == home / "skills" / skill / "SKILL.md"
     if spec["kind"] == "plugin":
         record = inventory.get(spec["plugin"])
         if record and record.source and path == record.source / "skills" / skill / "SKILL.md":
