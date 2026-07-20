@@ -871,7 +871,7 @@ def audit_repository() -> None:
         fail("deployable global policy differs from the reviewed session artifact")
     skills_policy = read_regular(REPO_ROOT / "global" / "official-skills.json", required=True, limit=MAX_REPO_BYTES)
     assert skills_policy is not None
-    if sha256(skills_policy) != "8d4c1d1fd32be3aa0a7b421c517855ba8f15d4fe934ffb1682f5b7a93753909a":
+    if sha256(skills_policy) != "71722b382707d232c236876d2d996937d224940772c0dc75a2e4254573a4f1c8":
         fail("official-skills policy differs from the reviewed catalog artifact")
     load_owned_policy()
     audit_git_history()

@@ -438,12 +438,14 @@ raise SystemExit(2)
             self.write_skill(
                 self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills" / skill / "SKILL.md"
             )
-        self.write_skill(
-            self.home / "plugins" / "cache" / "openai-curated-remote" / "gmail" / "0.1.5" / "skills" / "gmail" / "SKILL.md"
-        )
-        self.write_skill(
-            self.home / "plugins" / "cache" / "openai-curated-remote" / "github" / "0.1.8" / "skills" / "yeet" / "SKILL.md"
-        )
+        for skill in ("gmail", "gmail-inbox-triage"):
+            self.write_skill(
+                self.home / "plugins" / "cache" / "openai-curated-remote" / "gmail" / "0.1.5" / "skills" / skill / "SKILL.md"
+            )
+        for skill in ("gh-address-comments", "gh-fix-ci", "github", "yeet"):
+            self.write_skill(
+                self.home / "plugins" / "cache" / "openai-curated-remote" / "github" / "0.1.8" / "skills" / skill / "SKILL.md"
+            )
         for skill in ("google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides"):
             self.write_skill(
                 self.home / "plugins" / "cache" / "openai-curated-remote" / "google-drive" / "0.1.10" / "skills" / skill / "SKILL.md"
@@ -480,7 +482,7 @@ raise SystemExit(2)
         config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
         self.assertIn('model    = "keep-me" # preserve formatting', config)
         self.assertIn(str(unrelated), config)
-        self.assertEqual(config.count("enabled = false"), 9)
+        self.assertEqual(config.count("enabled = false"), 13)
         state = json.loads(Path(environment["CODEX_FAKE_STATE"]).read_text(encoding="utf-8"))
         plugin_ids = {item["pluginId"] for item in state["installed"]}
         required = {
@@ -884,7 +886,7 @@ raise SystemExit(2)
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "8d4c1d1fd32be3aa0a7b421c517855ba8f15d4fe934ffb1682f5b7a93753909a",
+            "71722b382707d232c236876d2d996937d224940772c0dc75a2e4254573a4f1c8",
         )
 
 

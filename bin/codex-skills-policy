@@ -71,8 +71,8 @@ CONNECTOR_SKILLS = {
     "canva@openai-curated-remote": (set(), {
         "canva-branded-presentation", "canva-resize-for-all-social-media", "canva-translate-design",
     }),
-    "github@openai-curated-remote": ({"yeet"}, set()),
-    "gmail@openai-curated-remote": (set(), {"gmail"}),
+    "github@openai-curated-remote": ({"yeet"}, {"gh-address-comments", "gh-fix-ci", "github"}),
+    "gmail@openai-curated-remote": (set(), {"gmail", "gmail-inbox-triage"}),
     "google-drive@openai-curated-remote": ({
         "google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides",
     }, set()),
@@ -234,7 +234,11 @@ def load_manifest() -> Dict[str, Any]:
         ("connector-cache", "canva", "openai-curated-remote", "canva-branded-presentation"),
         ("connector-cache", "canva", "openai-curated-remote", "canva-resize-for-all-social-media"),
         ("connector-cache", "canva", "openai-curated-remote", "canva-translate-design"),
+        ("connector-cache", "github", "openai-curated-remote", "gh-address-comments"),
+        ("connector-cache", "github", "openai-curated-remote", "gh-fix-ci"),
+        ("connector-cache", "github", "openai-curated-remote", "github"),
         ("connector-cache", "gmail", "openai-curated-remote", "gmail"),
+        ("connector-cache", "gmail", "openai-curated-remote", "gmail-inbox-triage"),
         ("user", "", "", "find-skills"),
         ("user", "", "", "web-design-guidelines"),
     }
