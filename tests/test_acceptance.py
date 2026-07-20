@@ -531,6 +531,36 @@ raise SystemExit(2)
         verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(verified.returncode, 0, verified.stderr)
 
+    def test_official_skills_prefers_active_plugin_cache_paths(self) -> None:
+        environment = self.make_current_skills_environment()
+        disabled = {
+            "documents@openai-primary-runtime": "documents",
+            "presentations@openai-primary-runtime": "presentations",
+            "template-creator@openai-primary-runtime": "template-creator",
+        }
+        for plugin_id, skill in disabled.items():
+            plugin, marketplace = plugin_id.split("@", 1)
+            cached = (
+                self.home / "plugins" / "cache" / marketplace / plugin / "fixture-v1"
+                / "skills" / skill / "SKILL.md"
+            )
+            self.write_skill(cached)
+
+        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
+        for plugin_id, skill in disabled.items():
+            plugin, marketplace = plugin_id.split("@", 1)
+            cached = (
+                self.home / "plugins" / "cache" / marketplace / plugin / "fixture-v1"
+                / "skills" / skill / "SKILL.md"
+            )
+            source = Path(environment["CODEX_FAKE_SOURCES"]) / plugin / "skills" / skill / "SKILL.md"
+            self.assertIn(str(cached), config)
+            self.assertNotIn(str(source), config)
+        verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+
     def test_official_skills_blocks_unsafe_required_plugin_without_replacing_tombstone(self) -> None:
         sources = self.scratch / "plugin-sources"
         records = list(self.required_plugin_records(sources))

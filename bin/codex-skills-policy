@@ -375,8 +375,16 @@ def desired_disabled_paths(
             if record is not None and record.source is None:
                 blocked = True
             elif record and record.source:
-                root = record.source
-                candidate = root / "skills" / skill / "SKILL.md"
+                plugin_name, marketplace = spec["plugin"].split("@", 1)
+                cache_root = home / "plugins" / "cache" / marketplace / plugin_name
+                cached_version = cache_root / record.version
+                if lexists(cached_version):
+                    validate_directory(cache_root, label="a plugin skill cache root")
+                    root = cache_root
+                    candidate = cached_version / "skills" / skill / "SKILL.md"
+                else:
+                    root = record.source
+                    candidate = root / "skills" / skill / "SKILL.md"
                 if not lexists(candidate):
                     blocked = True
                     candidate = None
