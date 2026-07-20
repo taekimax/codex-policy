@@ -128,5 +128,8 @@
     {"name": "context7-cli", "policy": "implicit-narrow"},
     {"name": "oracle-solver", "policy": "explicit-or-stuck"}
   ],
+  "vendored_user_skills": [
+    {"name": "oracle-solver", "source": "global/skills/oracle-solver", "runtime_policy": "exact-reviewed-source"}
+  ],
   "retained_system_skills": ["imagegen", "openai-docs", "plugin-creator", "skill-creator", "skill-installer"]
 }

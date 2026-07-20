@@ -67,6 +67,9 @@ EXPECTED_FILES = {
     "global/config.owned.toml",
     "global/official-skills.json",
     "global/owned-keys.txt",
+    "global/skills/oracle-solver/SKILL.md",
+    "global/skills/oracle-solver/agents/openai.yaml",
+    "global/skills/oracle-solver/scripts/run_oracle.py",
     "tests/test_acceptance.py",
     "vendor/tomlkit/LICENSE",
     "vendor/tomlkit/__init__.py",
@@ -82,6 +85,13 @@ EXPECTED_FILES = {
     "vendor/tomlkit/source.py",
     "vendor/tomlkit/toml_document.py",
     "vendor/tomlkit/toml_file.py",
+}
+REVIEWED_ARTIFACT_HASHES = {
+    "global/AGENTS.md": "06cfe766e213f1fb6e823133ee111306b7fbe8c376664e0c8804f8d0eb190bde",
+    "global/official-skills.json": "190c831c4fa7e23b0f0c2aa362819492d4bbb3985f9308272153f200221f83f3",
+    "global/skills/oracle-solver/SKILL.md": "f5b385a69aca1066c35ecfae7317792b625fb3d33e7067099463fd05f337731a",
+    "global/skills/oracle-solver/agents/openai.yaml": "141a10564d74f95f1c0fb9476fe2caf084d1cb9bd511a3f090fc2488737f5ec4",
+    "global/skills/oracle-solver/scripts/run_oracle.py": "3dbef44fa2530170cca9f8ecff526a4ff9a5bf3dc486ad9ecd7e4d0d93b3a166",
 }
 
 
@@ -792,7 +802,16 @@ def audit_git_history() -> None:
         tracked.add(path)
         if path not in EXPECTED_FILES:
             fail("repository audit found a non-allowlisted tracked path")
-        wanted_mode = "100755" if path in {"bin/codex-policy", "bin/codex-skills-policy"} else "100644"
+        wanted_mode = (
+            "100755"
+            if path
+            in {
+                "bin/codex-policy",
+                "bin/codex-skills-policy",
+                "global/skills/oracle-solver/scripts/run_oracle.py",
+            }
+            else "100644"
+        )
         if mode != wanted_mode:
             fail("repository audit found an unsafe Git file mode")
     head = subprocess.run(
@@ -860,19 +879,23 @@ def audit_repository() -> None:
         if info.st_size > MAX_REPO_BYTES:
             fail("repository audit found an oversized artifact")
         executable = bool(stat.S_IMODE(info.st_mode) & 0o111)
-        if executable != (relative in {"bin/codex-policy", "bin/codex-skills-policy"}):
+        if executable != (
+            relative
+            in {
+                "bin/codex-policy",
+                "bin/codex-skills-policy",
+                "global/skills/oracle-solver/scripts/run_oracle.py",
+            }
+        ):
             fail("repository audit found an unsafe executable mode")
         data = read_regular(path, required=True, limit=MAX_REPO_BYTES)
         assert data is not None
         scan_public_bytes(data)
-    policy = read_regular(POLICY_SOURCE, required=True, limit=MAX_REPO_BYTES)
-    assert policy is not None
-    if sha256(policy) != "977043c75d018938ea79e67b1279a7ff95f9c5042095ae907002255363adcf69":
-        fail("deployable global policy differs from the reviewed session artifact")
-    skills_policy = read_regular(REPO_ROOT / "global" / "official-skills.json", required=True, limit=MAX_REPO_BYTES)
-    assert skills_policy is not None
-    if sha256(skills_policy) != "f1eb23bd42961b4230fb1347920f846c4729470400511fa76082b05ee19db24e":
-        fail("official-skills policy differs from the reviewed catalog artifact")
+    for relative, expected_hash in REVIEWED_ARTIFACT_HASHES.items():
+        artifact = read_regular(REPO_ROOT / relative, required=True, limit=MAX_REPO_BYTES)
+        assert artifact is not None
+        if sha256(artifact) != expected_hash:
+            fail("a reviewed policy artifact differs from the approved source")
     load_owned_policy()
     audit_git_history()
 

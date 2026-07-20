@@ -2,7 +2,7 @@
 
 This repository is public and must contain only the allowlisted portable policy artifacts. Never contribute live Codex configuration, credentials, authentication files, session data, histories, logs, caches, backups, trust records, machine paths, environment values, or runtime fingerprints.
 
-Skill/plugin policy must use logical names and reviewed public catalog revisions. Never copy resolved plugin paths, connected-account metadata, local plugin inventory output, or skill contents into `global/official-skills.json`. Reconciliation output must remain status-only and sanitized.
+Skill/plugin policy must use logical names and reviewed public catalog revisions. Never copy resolved plugin paths, connected-account metadata, or local plugin inventory output. Skill contents are allowed only in the reviewed `global/skills/oracle-solver` source tree; never place them in `global/official-skills.json`. Reconciliation output must remain status-only and sanitized.
 
 Run both checks before every public push:
 

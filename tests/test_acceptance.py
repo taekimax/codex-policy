@@ -4,15 +4,19 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import os
 import fcntl
+import runpy
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
+from unittest import mock
 from pathlib import Path
 from typing import Dict, Optional, Sequence
 
@@ -23,6 +27,8 @@ SCRIPT = REPO / "bin" / "codex-policy"
 SKILLS_SCRIPT = REPO / "bin" / "codex-skills-policy"
 GLOBAL_POLICY = REPO / "global" / "AGENTS.md"
 OFFICIAL_SKILLS = REPO / "global" / "official-skills.json"
+ORACLE_SKILL = REPO / "global" / "skills" / "oracle-solver"
+ORACLE_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/run_oracle.py")
 REQUIRED_PLUGIN_SKILLS = {
     "documents@openai-primary-runtime": {"documents"},
     "pdf@openai-primary-runtime": {"pdf"},
@@ -211,6 +217,13 @@ raise SystemExit(2)
         policy = skill.parent / "agents" / "openai.yaml"
         policy.parent.mkdir(parents=True, exist_ok=True)
         policy.write_text("policy:\n  allow_implicit_invocation: true\n", encoding="utf-8")
+
+    def write_current_oracle(self) -> None:
+        target = self.home / "skills" / "oracle-solver"
+        for relative in ORACLE_FILES:
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(ORACLE_SKILL / relative, destination)
 
     def make_current_skills_environment(
         self,
@@ -460,7 +473,7 @@ raise SystemExit(2)
         for skill in ("find-skills", "web-design-guidelines"):
             self.write_skill(Path(environment["HOME"]) / ".agents" / "skills" / skill / "SKILL.md")
         self.write_current_context7()
-        self.write_skill(self.home / "skills" / "oracle-solver" / "SKILL.md")
+        self.write_current_oracle()
         self.home.mkdir(parents=True, exist_ok=True)
         stale = self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills" / "canva-branded-presentation" / "SKILL.md"
         unrelated = self.scratch / "unrelated" / "SKILL.md"
@@ -707,7 +720,7 @@ raise SystemExit(2)
     def test_official_skills_context7_requires_true_policy_and_narrow_trigger(self) -> None:
         environment = self.make_current_skills_environment()
         self.write_current_context7()
-        self.write_skill(self.home / "skills" / "oracle-solver" / "SKILL.md")
+        self.write_current_oracle()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
@@ -724,6 +737,144 @@ raise SystemExit(2)
         unreachable = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(unreachable.returncode, 1, unreachable.stderr)
         self.assertEqual(json.loads(unreachable.stdout)["retained_external"], "review")
+
+    def test_official_skills_oracle_requires_exact_reviewed_source(self) -> None:
+        environment = self.make_current_skills_environment()
+        self.write_current_context7()
+        self.write_current_oracle()
+        current = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(current.returncode, 0, current.stderr)
+        self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
+
+        runner = self.home / "skills" / "oracle-solver" / "scripts" / "run_oracle.py"
+        runner.write_text(runner.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+        drifted = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(drifted.returncode, 0, drifted.stderr)
+        self.assertEqual(json.loads(drifted.stdout)["retained_external"], "review")
+        self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
+
+    def test_vendored_oracle_runner_enforces_document_only_write_contract(self) -> None:
+        namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
+        response = {
+            "schema_version": "oracle-review-v1",
+            "status": "complete",
+            "verdict": "proceed",
+            "confidence": "high",
+            "answer": "A concise answer.",
+            "scope": {"reviewed": ["fixture"], "not_reviewed": []},
+            "findings": [
+                {
+                    "id": "F1",
+                    "severity": "info",
+                    "statement": "The fixture is sound.",
+                    "evidence": ["fixture:1"],
+                    "reasoning": "The contract is explicit.",
+                    "recommendation": "Proceed.",
+                }
+            ],
+            "risks": [],
+            "recommended_next_steps": [
+                {
+                    "order": 1,
+                    "action": "Continue.",
+                    "rationale": "The fixture passed.",
+                    "verification": "Re-run the test.",
+                }
+            ],
+            "assumptions": [],
+            "unknowns": [],
+        }
+        document = namespace["normalize_document_path"](self.scratch / "review.md")
+        namespace["require_document_in_workspace"](document, self.scratch)
+        namespace["write_document"](document, namespace["render_document"](response))
+        marker = namespace["DOCUMENT_MARKER"]
+        self.assertTrue(document.read_text(encoding="utf-8").startswith(marker + "\n"))
+        self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
+        handoff = namespace["handoff"](response, document)
+        self.assertEqual(handoff["schema_version"], "oracle-review-handoff-v1")
+        self.assertEqual(handoff["document_path"], str(document))
+
+        unmanaged = self.scratch / "unmanaged.md"
+        unmanaged.write_text("user-owned\n", encoding="utf-8")
+        with self.assertRaises(namespace["OracleError"]):
+            namespace["normalize_document_path"](unmanaged)
+
+        command = namespace["build_command"](
+            "codex", self.scratch, self.scratch / "schema.json", self.scratch / "response.json"
+        )
+        self.assertIn("--search", command)
+        self.assertIn("workspace-write", command)
+        self.assertNotIn("read-only", command)
+        self.assertNotIn("--disable", command)
+        self.assertNotIn("--ignore-user-config", command)
+        self.assertNotIn("mcp_servers={}", command)
+        self.assertNotIn("--strict-config", command)
+        contract = namespace["sanitized_contract"](command, document)
+        self.assertEqual(contract["timeout"], "none")
+        skill_text = (ORACLE_SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("read-only", skill_text.lower())
+        self.assertIn("1, 2, 4, 8, 16, and then 20 minutes", skill_text)
+        self.assertIn("autonomously decides", skill_text)
+        self.assertIn("not a claim of infallibility", skill_text)
+        self.assertEqual(namespace["delete_document"](document), document)
+        self.assertFalse(document.exists())
+
+        target = self.scratch / "target"
+        target.mkdir()
+        request = target / "request.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "objective": "Review the fixture.",
+                    "context": "Fixture context.",
+                    "questions": ["Is it sound?"],
+                    "constraints": [],
+                    "prior_attempts": [],
+                    "evidence": [],
+                    "excluded_actions": [],
+                    "requested_deliverable": "A verdict.",
+                }
+            ),
+            encoding="utf-8",
+        )
+        managed_document = target / "oracle-review.md"
+        captured: Dict[str, Path] = {}
+
+        def fake_run(command, prompt, scratch_workspace, environment):
+            captured["scratch"] = scratch_workspace
+            self.assertNotEqual(scratch_workspace, target)
+            self.assertEqual(environment["TMPDIR"], str(scratch_workspace))
+            self.assertIn(str(target), prompt)
+            (scratch_workspace / "intermediate.txt").write_text("scratch", encoding="utf-8")
+            output = Path(command[command.index("--output-last-message") + 1])
+            output.write_text(json.dumps(response), encoding="utf-8")
+            return ""
+
+        main = namespace["main"]
+        with mock.patch.dict(
+            main.__globals__,
+            {
+                "resolve_codex": lambda environment: "codex",
+                "verify_model_contract": lambda executable, environment: None,
+                "run_codex": fake_run,
+            },
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result = main(
+                    [
+                        "--workspace",
+                        str(target),
+                        "--request-file",
+                        str(request),
+                        "--document",
+                        str(managed_document),
+                    ]
+                )
+        self.assertEqual(result, 0)
+        self.assertTrue(managed_document.exists())
+        self.assertEqual(json.loads(stdout.getvalue())["document_path"], str(managed_document.resolve()))
+        self.assertFalse(captured["scratch"].exists())
 
     def test_official_skills_partial_failure_restores_exact_config_and_plugin_state(self) -> None:
         sources = self.scratch / "plugin-sources"
@@ -946,11 +1097,19 @@ raise SystemExit(2)
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "977043c75d018938ea79e67b1279a7ff95f9c5042095ae907002255363adcf69",
+            "06cfe766e213f1fb6e823133ee111306b7fbe8c376664e0c8804f8d0eb190bde",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "f1eb23bd42961b4230fb1347920f846c4729470400511fa76082b05ee19db24e",
+            "190c831c4fa7e23b0f0c2aa362819492d4bbb3985f9308272153f200221f83f3",
+        )
+        self.assertEqual(
+            {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
+            {
+                "SKILL.md": "f5b385a69aca1066c35ecfae7317792b625fb3d33e7067099463fd05f337731a",
+                "agents/openai.yaml": "141a10564d74f95f1c0fb9476fe2caf084d1cb9bd511a3f090fc2488737f5ec4",
+                "scripts/run_oracle.py": "3dbef44fa2530170cca9f8ecff526a4ff9a5bf3dc486ad9ecd7e4d0d93b3a166",
+            },
         )
 
 
