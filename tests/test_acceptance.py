@@ -578,33 +578,47 @@ raise SystemExit(2)
         self.assertEqual(second.returncode, 0, second.stderr)
         self.assertIn("result: none", second.stdout)
 
-    def test_official_skills_prefers_active_plugin_cache_paths(self) -> None:
+    def test_official_skills_accepts_current_global_setting_shape(self) -> None:
         environment = self.make_current_skills_environment()
-        disabled = {
-            "documents@openai-primary-runtime": "documents",
-            "presentations@openai-primary-runtime": "presentations",
-            "template-creator@openai-primary-runtime": "template-creator",
-        }
-        for plugin_id, skill in disabled.items():
-            plugin, marketplace = plugin_id.split("@", 1)
-            cached = (
-                self.home / "plugins" / "cache" / marketplace / plugin / "fixture-v1"
-                / "skills" / skill / "SKILL.md"
-            )
-            self.write_skill(cached)
+        connector_root = self.home / "plugins" / "cache" / "openai-curated-remote"
+        github_skill = connector_root / "github" / "0.1.8" / "skills" / "yeet" / "SKILL.md"
+        gmail_skill = connector_root / "gmail" / "0.1.5" / "skills" / "gmail" / "SKILL.md"
+        self.write_skill(github_skill)
+        self.write_skill(gmail_skill)
+        for skill in ("google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides"):
+            self.write_skill(connector_root / "google-drive" / "0.1.10" / "skills" / skill / "SKILL.md")
+        (connector_root / "slack" / "0.1.4" / "skills").mkdir(parents=True)
+        shared_skills = Path(environment["HOME"]) / ".agents" / "skills"
+        for skill in ("find-skills", "web-design-guidelines"):
+            self.write_skill(shared_skills / skill / "SKILL.md")
+        self.write_current_context7()
+        self.write_current_oracle()
 
-        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
-        self.assertEqual(applied.returncode, 0, applied.stderr)
-        config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
-        for plugin_id, skill in disabled.items():
-            plugin, marketplace = plugin_id.split("@", 1)
-            cached = (
-                self.home / "plugins" / "cache" / marketplace / plugin / "fixture-v1"
-                / "skills" / skill / "SKILL.md"
-            )
-            source = Path(environment["CODEX_FAKE_SOURCES"]) / plugin / "skills" / skill / "SKILL.md"
-            self.assertIn(str(cached), config)
-            self.assertNotIn(str(source), config)
+        sources = Path(environment["CODEX_FAKE_SOURCES"])
+        configured = [
+            sources / "documents" / "skills" / "documents" / "SKILL.md",
+            sources / "presentations" / "skills" / "presentations" / "SKILL.md",
+            sources / "template-creator" / "skills" / "template-creator" / "SKILL.md",
+            connector_root / "canva" / "removed" / "skills" / "canva-branded-presentation" / "SKILL.md",
+            connector_root / "canva" / "removed" / "skills" / "canva-resize-for-all-social-media" / "SKILL.md",
+            connector_root / "canva" / "removed" / "skills" / "canva-translate-design" / "SKILL.md",
+            gmail_skill,
+            shared_skills / "find-skills" / "SKILL.md",
+            shared_skills / "web-design-guidelines" / "SKILL.md",
+        ]
+        original = "".join(
+            '[[skills.config]]\npath = "{}"\nenabled = false\n\n'.format(path)
+            for path in configured
+        ).encode("utf-8")
+        self.home.joinpath("config.toml").write_bytes(original)
+
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        payload = json.loads(plan.stdout)
+        self.assertEqual(payload["action"], "none")
+        self.assertEqual(payload["connector_skills"], "not_present")
+        self.assertEqual(payload["skill_disables"], "current")
+        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
         verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(verified.returncode, 0, verified.stderr)
 
@@ -675,24 +689,32 @@ raise SystemExit(2)
         self.assertEqual(json.loads(verify.stdout)["action"], "blocked")
         self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
 
-    def test_official_skills_blocks_present_connector_mismatch(self) -> None:
+    def test_official_skills_blocks_unsafe_connector_skill_sets(self) -> None:
         environment = self.make_current_skills_environment()
-        root = self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills"
-        for skill in ("canva-branded-presentation", "canva-resize-for-all-social-media"):
-            self.write_skill(root / skill / "SKILL.md")
-        missing_tombstone = root / "canva-translate-design" / "SKILL.md"
-        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(missing_tombstone).encode("utf-8")
-        self.home.joinpath("config.toml").write_bytes(original)
-        verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
-        self.assertEqual(verify.returncode, 1, verify.stderr)
-        payload = json.loads(verify.stdout)
-        self.assertEqual(payload["connector_skills"], "review")
-        self.assertEqual(payload["verified"], "failed")
-        applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
-        self.assertEqual(applied.returncode, 2)
-        self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
+        github = self.home / "plugins" / "cache" / "openai-curated-remote" / "github"
+        github_skills = github / "0.1.8" / "skills"
+        for skill in ("gh-address-comments", "gh-fix-ci", "github"):
+            self.write_skill(github_skills / skill / "SKILL.md")
+        missing_active = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(missing_active.returncode, 1, missing_active.stderr)
+        self.assertEqual(json.loads(missing_active.stdout)["connector_skills"], "review")
 
-    def test_official_skills_cache_fallback_is_anchored_to_codex_home(self) -> None:
+        shutil.rmtree(github)
+        canva_skills = (
+            self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills"
+        )
+        for skill in (
+            "canva-branded-presentation",
+            "canva-resize-for-all-social-media",
+            "canva-translate-design",
+            "unreviewed-extra",
+        ):
+            self.write_skill(canva_skills / skill / "SKILL.md")
+        unreviewed = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(unreviewed.returncode, 1, unreviewed.stderr)
+        self.assertEqual(json.loads(unreviewed.stdout)["connector_skills"], "review")
+
+    def test_official_skills_preserves_unrelated_cache_like_path(self) -> None:
         environment = self.make_current_skills_environment()
         unrelated = Path("/tmp") / "unrelated-policy-fixture" / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "v1" / "skills" / "documents" / "SKILL.md"
         original_entry = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(unrelated)

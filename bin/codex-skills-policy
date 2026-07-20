@@ -399,16 +399,8 @@ def desired_disabled_paths(
             if record is not None and record.source is None:
                 blocked = True
             elif record and record.source:
-                plugin_name, marketplace = spec["plugin"].split("@", 1)
-                cache_root = home / "plugins" / "cache" / marketplace / plugin_name
-                cached_version = cache_root / record.version
-                if lexists(cached_version):
-                    validate_directory(cache_root, label="a plugin skill cache root")
-                    root = cache_root
-                    candidate = cached_version / "skills" / skill / "SKILL.md"
-                else:
-                    root = record.source
-                    candidate = root / "skills" / skill / "SKILL.md"
+                root = record.source
+                candidate = root / "skills" / skill / "SKILL.md"
                 if not lexists(candidate):
                     blocked = True
                     candidate = None
@@ -426,7 +418,6 @@ def desired_disabled_paths(
                     latest = sorted(versions, key=lambda item: version_key(item.name))[-1]
                     candidate = latest / "skills" / skill / "SKILL.md"
                     if not lexists(candidate):
-                        blocked = True
                         candidate = None
         elif kind == "user":
             root = user_home() / ".agents" / "skills"
@@ -753,7 +744,8 @@ def connector_status(home: Path, manifest: Mapping[str, Any]) -> str:
         if not lexists(skills_root):
             return "review"
         validate_directory(skills_root, label="a connector skills directory")
-        expected = set(declaration["active"]) | set(declaration["disabled"])
+        active = set(declaration["active"])
+        expected = active | set(declaration["disabled"])
         discovered: Set[str] = set()
         try:
             skill_directories = list(skills_root.iterdir())
@@ -764,7 +756,7 @@ def connector_status(home: Path, manifest: Mapping[str, Any]) -> str:
             if lexists(candidate):
                 safe_skill_file(home, candidate)
                 discovered.add(directory.name)
-        if discovered != expected:
+        if not active.issubset(discovered) or not discovered.issubset(expected):
             return "review"
     return "current" if present == len(declarations) else "not_present"
 
