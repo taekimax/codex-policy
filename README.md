@@ -16,7 +16,7 @@ The core installer manages only portable multi-agent limits. It deliberately doe
 
 Official skills and plugins use a separate, explicit workflow. `bin/codex-skills-policy` dynamically resolves installed plugin and skill locations by logical name, disables only the reviewed skill set, and preserves all unrelated configuration. The reviewed state adds no standalone curated, experimental, or optional plugin; apply may restore a missing retained primary-runtime or bundled package from the host's current supported marketplace. It removes stale local Canva and GitHub duplicates, and also removes Game Studio because clean-session tests did not register its skills. Remote connector bundles remain externally managed.
 
-The reviewed connector policy keeps only GitHub `yeet` and the five Google Drive skills active. It disables all Canva and Gmail skills plus GitHub's broad triage, review-fix, and CI-routing skills, preserving narrow task-scoped workflows and avoiding catalog crowding while leaving connector accounts untouched.
+The reviewed connector policy keeps only GitHub `yeet` and the five Google Drive skills active. It disables all Canva, Gmail, and Slack skills plus GitHub's broad triage, review-fix, and CI-routing skills, preserving narrow task-scoped workflows and avoiding catalog crowding while leaving connector accounts untouched.
 
 Everything outside the owned-key manifest is preserved. The tool uses a pinned, vendored round-trip TOML parser so comments, ordering, formatting, dotted keys, arrays, and unrelated tables survive an update.
 

@@ -450,6 +450,13 @@ raise SystemExit(2)
             self.write_skill(
                 self.home / "plugins" / "cache" / "openai-curated-remote" / "google-drive" / "0.1.10" / "skills" / skill / "SKILL.md"
             )
+        for skill in (
+            "slack", "slack-channel-summarization", "slack-daily-digest",
+            "slack-notification-triage", "slack-outgoing-message", "slack-reply-drafting",
+        ):
+            self.write_skill(
+                self.home / "plugins" / "cache" / "openai-curated-remote" / "slack" / "0.1.4" / "skills" / skill / "SKILL.md"
+            )
         for skill in ("find-skills", "web-design-guidelines"):
             self.write_skill(Path(environment["HOME"]) / ".agents" / "skills" / skill / "SKILL.md")
         self.write_current_context7()
@@ -482,7 +489,7 @@ raise SystemExit(2)
         config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
         self.assertIn('model    = "keep-me" # preserve formatting', config)
         self.assertIn(str(unrelated), config)
-        self.assertEqual(config.count("enabled = false"), 13)
+        self.assertEqual(config.count("enabled = false"), 19)
         state = json.loads(Path(environment["CODEX_FAKE_STATE"]).read_text(encoding="utf-8"))
         plugin_ids = {item["pluginId"] for item in state["installed"]}
         required = {
@@ -916,7 +923,7 @@ raise SystemExit(2)
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "71722b382707d232c236876d2d996937d224940772c0dc75a2e4254573a4f1c8",
+            "ab0e34be78398aaf4874c963029914b4a04e858e109a02aba768e4d63e44eb84",
         )
 
 

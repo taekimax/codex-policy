@@ -78,12 +78,13 @@
       {"plugin": "visualize@openai-bundled", "skills": ["visualize"]}
     ],
     "forbidden_local_plugins": ["canva@openai-curated", "game-studio@openai-curated", "github@openai-curated"],
-    "external_connector_bundles": ["canva@openai-curated-remote", "github@openai-curated-remote", "gmail@openai-curated-remote", "google-drive@openai-curated-remote"],
+    "external_connector_bundles": ["canva@openai-curated-remote", "github@openai-curated-remote", "gmail@openai-curated-remote", "google-drive@openai-curated-remote", "slack@openai-curated-remote"],
     "external_connector_skills": [
       {"plugin": "canva@openai-curated-remote", "active": [], "disabled": ["canva-branded-presentation", "canva-resize-for-all-social-media", "canva-translate-design"]},
       {"plugin": "github@openai-curated-remote", "active": ["yeet"], "disabled": ["gh-address-comments", "gh-fix-ci", "github"]},
       {"plugin": "gmail@openai-curated-remote", "active": [], "disabled": ["gmail", "gmail-inbox-triage"]},
-      {"plugin": "google-drive@openai-curated-remote", "active": ["google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides"], "disabled": []}
+      {"plugin": "google-drive@openai-curated-remote", "active": ["google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides"], "disabled": []},
+      {"plugin": "slack@openai-curated-remote", "active": [], "disabled": ["slack", "slack-channel-summarization", "slack-daily-digest", "slack-notification-triage", "slack-outgoing-message", "slack-reply-drafting"]}
     ],
     "decisions": [
       {"group": "game-studio", "decision": "reject", "reason": "Current clean sessions do not register the plugin's skills."},
@@ -95,6 +96,7 @@
       {"group": "external-workspaces", "decision": "reject", "reason": "Do not add account-bound services without an active task."},
       {"group": "github-connector-expansion", "decision": "reject", "reason": "Keep only the narrow publish workflow active; broad triage, review-fix, and CI routing overlap existing task-scoped workflows."},
       {"group": "gmail-connector-expansion", "decision": "reject", "reason": "Keep Gmail globally disabled; inbox triage must not bypass the reviewed core Gmail disable."},
+      {"group": "slack-connector-expansion", "decision": "reject", "reason": "Disable the six Slack workflow skills to remove catalog crowding while preserving the externally managed connector account."},
       {"group": "runtime-and-connected-bundles", "decision": "retain", "reason": "Keep existing platform and connector bundles externally managed."}
     ]
   },
@@ -110,6 +112,12 @@
     {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "github", "skill": "github"},
     {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "gmail", "skill": "gmail"},
     {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "gmail", "skill": "gmail-inbox-triage"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-channel-summarization"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-daily-digest"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-notification-triage"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-outgoing-message"},
+    {"kind": "connector-cache", "marketplace": "openai-curated-remote", "plugin": "slack", "skill": "slack-reply-drafting"},
     {"kind": "user", "skill": "find-skills"},
     {"kind": "user", "skill": "web-design-guidelines"}
   ],

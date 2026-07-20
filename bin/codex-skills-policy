@@ -76,6 +76,10 @@ CONNECTOR_SKILLS = {
     "google-drive@openai-curated-remote": ({
         "google-drive", "google-docs", "google-drive-comments", "google-sheets", "google-slides",
     }, set()),
+    "slack@openai-curated-remote": (set(), {
+        "slack", "slack-channel-summarization", "slack-daily-digest",
+        "slack-notification-triage", "slack-outgoing-message", "slack-reply-drafting",
+    }),
 }
 
 
@@ -239,6 +243,12 @@ def load_manifest() -> Dict[str, Any]:
         ("connector-cache", "github", "openai-curated-remote", "github"),
         ("connector-cache", "gmail", "openai-curated-remote", "gmail"),
         ("connector-cache", "gmail", "openai-curated-remote", "gmail-inbox-triage"),
+        ("connector-cache", "slack", "openai-curated-remote", "slack"),
+        ("connector-cache", "slack", "openai-curated-remote", "slack-channel-summarization"),
+        ("connector-cache", "slack", "openai-curated-remote", "slack-daily-digest"),
+        ("connector-cache", "slack", "openai-curated-remote", "slack-notification-triage"),
+        ("connector-cache", "slack", "openai-curated-remote", "slack-outgoing-message"),
+        ("connector-cache", "slack", "openai-curated-remote", "slack-reply-drafting"),
         ("user", "", "", "find-skills"),
         ("user", "", "", "web-design-guidelines"),
     }
