@@ -1119,7 +1119,7 @@ raise SystemExit(2)
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "c3aa543906d51a8101c0a3347a2680657a9e249ee6b1098d64a77ea1d7de1132",
+            "a7fbeed99d3098c6108598834332136d46b0ccd460eaeaee67d174eb1ebc4f8d",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
@@ -1128,9 +1128,9 @@ raise SystemExit(2)
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
             {
-                "SKILL.md": "f5b385a69aca1066c35ecfae7317792b625fb3d33e7067099463fd05f337731a",
+                "SKILL.md": "69ee061f2d402bed0b6ea49953c151a3a153883d941c58a46d0dc74ee25020f2",
                 "agents/openai.yaml": "141a10564d74f95f1c0fb9476fe2caf084d1cb9bd511a3f090fc2488737f5ec4",
-                "scripts/run_oracle.py": "3dbef44fa2530170cca9f8ecff526a4ff9a5bf3dc486ad9ecd7e4d0d93b3a166",
+                "scripts/run_oracle.py": "3aeba534c09d76a81f0c11875e83baef1fa6883d326c820d0486c5818a560322",
             },
         )
 

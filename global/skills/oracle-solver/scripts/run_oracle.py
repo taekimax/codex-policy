@@ -17,7 +17,7 @@ from typing import Any, Mapping, Sequence
 
 
 MODEL = "gpt-5.6-sol"
-EFFORT = "max"
+EFFORT = "xhigh"
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_DIAGNOSTIC_BYTES = 16 * 1024
