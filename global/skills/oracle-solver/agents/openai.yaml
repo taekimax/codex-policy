@@ -1,4 +1,4 @@
 interface:
   display_name: "Oracle Solver"
-  short_description: "Independent final review saved to a report"
-  default_prompt: "Use $oracle-solver for an independent final review under the current evidence and constraints, save the detailed result in a managed Markdown document, and return its path before continuing."
+  short_description: "Independent planning and problem-solving review"
+  default_prompt: "Use $oracle-solver for a bounded independent planning, blocked-problem, or high-value review under the current evidence and constraints, save the detailed result in a managed Markdown document, and return its path before continuing."

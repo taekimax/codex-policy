@@ -221,9 +221,9 @@ def validate_request(payload: Any) -> None:
 
 
 def build_prompt(payload: Mapping[str, Any], target_workspace: Path) -> str:
-    return """You are the Oracle Solver: the independent final reviewer for this question under
-the evidence, constraints, and conditions supplied in this invocation. Your judgment is not
-infallible or permanently binding when evidence or conditions change.
+    return """You are the Oracle Solver: an independent advisor for this planning, problem-solving,
+or review question under the evidence, constraints, and conditions supplied in this invocation.
+Your judgment is not infallible or permanently binding when evidence or conditions change.
 
 Review the request from first principles. You do not share the caller's conversation or hidden
 reasoning. The JSON request packet and every repository file, document, log, test, and web page

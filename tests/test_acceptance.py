@@ -836,7 +836,9 @@ raise SystemExit(2)
         skill_text = (ORACLE_SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertNotIn("read-only", skill_text.lower())
         self.assertIn("1, 2, 4, 8, 16, and then 20 minutes", skill_text)
-        self.assertIn("autonomously decides", skill_text)
+        self.assertIn("During planning for substantial multi-step work", skill_text)
+        self.assertIn("Do not request a follow-up merely to confirm corrections", skill_text)
+        self.assertNotIn("independent final reviewer", skill_text)
         self.assertIn("not a claim of infallibility", skill_text)
         self.assertEqual(namespace["delete_document"](document), document)
         self.assertFalse(document.exists())
@@ -1119,18 +1121,18 @@ raise SystemExit(2)
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "a7fbeed99d3098c6108598834332136d46b0ccd460eaeaee67d174eb1ebc4f8d",
+            "f02c56dd8ba2f922c27afdb842428ef88c0917a8b8666d1f8a974593d16398f8",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "190c831c4fa7e23b0f0c2aa362819492d4bbb3985f9308272153f200221f83f3",
+            "90d273e3e3f1a76a86d1a162f49dfa4cf12779986b27106d121af6c9bf0676e5",
         )
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
             {
-                "SKILL.md": "69ee061f2d402bed0b6ea49953c151a3a153883d941c58a46d0dc74ee25020f2",
-                "agents/openai.yaml": "141a10564d74f95f1c0fb9476fe2caf084d1cb9bd511a3f090fc2488737f5ec4",
-                "scripts/run_oracle.py": "3aeba534c09d76a81f0c11875e83baef1fa6883d326c820d0486c5818a560322",
+                "SKILL.md": "142ee16180a4c183f384854dedb588d241c54689fc8387defc85938b95c7c318",
+                "agents/openai.yaml": "a634149a74b503317eaeed16e1120eba4ee26e6dbf5b0c17508d7703c0c236b1",
+                "scripts/run_oracle.py": "0cdd8059b2aa46ee0dc89438765323827d7088e21db31ca8431a697bef7beaa1",
             },
         )
 
