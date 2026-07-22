@@ -778,11 +778,18 @@ raise SystemExit(2)
     def test_vendored_oracle_runner_enforces_document_only_write_contract(self) -> None:
         namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
         response = {
-            "schema_version": "oracle-review-v1",
+            "schema_version": "oracle-review-v2",
             "status": "complete",
             "verdict": "proceed",
             "confidence": "high",
             "answer": "A concise answer.",
+            "question_answers": [
+                {
+                    "question_index": 1,
+                    "answer": "Yes, it is sound.",
+                    "finding_ids": ["F1"],
+                }
+            ],
             "scope": {"reviewed": ["fixture"], "not_reviewed": []},
             "findings": [
                 {
@@ -806,15 +813,52 @@ raise SystemExit(2)
             "assumptions": [],
             "unknowns": [],
         }
+        questions = ["Is it sound?"]
         document = namespace["normalize_document_path"](self.scratch / "review.md")
         namespace["require_document_in_workspace"](document, self.scratch)
-        namespace["write_document"](document, namespace["render_document"](response))
+        rendered = namespace["render_document"](response, questions)
+        document_sha256 = namespace["write_document"](document, rendered)
         marker = namespace["DOCUMENT_MARKER"]
         self.assertTrue(document.read_text(encoding="utf-8").startswith(marker + "\n"))
+        self.assertIn("## Question answers", document.read_text(encoding="utf-8"))
+        self.assertEqual(document_sha256, digest(document.read_bytes()))
         self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
-        handoff = namespace["handoff"](response, document)
-        self.assertEqual(handoff["schema_version"], "oracle-review-handoff-v1")
+        handoff = namespace["handoff"](response, document, document_sha256)
+        self.assertEqual(handoff["schema_version"], "oracle-review-handoff-v2")
         self.assertEqual(handoff["document_path"], str(document))
+        self.assertEqual(handoff["document_sha256"], document_sha256)
+
+        namespace["validate_response"](response, len(questions))
+        incomplete = json.loads(json.dumps(response))
+        incomplete["question_answers"] = []
+        with self.assertRaisesRegex(namespace["OracleError"], "cover every request question"):
+            namespace["validate_response"](incomplete, len(questions))
+        duplicate_finding = json.loads(json.dumps(response))
+        duplicate_finding["findings"].append(dict(duplicate_finding["findings"][0]))
+        with self.assertRaisesRegex(namespace["OracleError"], "finding IDs must be unique"):
+            namespace["validate_response"](duplicate_finding, len(questions))
+        unknown_finding = json.loads(json.dumps(response))
+        unknown_finding["question_answers"][0]["finding_ids"] = ["missing"]
+        with self.assertRaisesRegex(namespace["OracleError"], "unknown finding"):
+            namespace["validate_response"](unknown_finding, len(questions))
+        contradictory = json.loads(json.dumps(response))
+        contradictory["status"] = "blocked"
+        with self.assertRaisesRegex(namespace["OracleError"], "cannot recommend proceeding"):
+            namespace["validate_response"](contradictory, len(questions))
+
+        prior_document = document.read_bytes()
+        with (
+            mock.patch.object(namespace["os"], "replace", side_effect=OSError("fixture")),
+            self.assertRaisesRegex(namespace["OracleError"], "could not be written"),
+        ):
+            namespace["write_document"](document, rendered + "\nreplacement\n")
+        self.assertEqual(document.read_bytes(), prior_document)
+        self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
+        replacement = rendered + "\nReplacement verified.\n"
+        replacement_sha256 = namespace["write_document"](document, replacement)
+        self.assertEqual(document.read_text(encoding="utf-8"), replacement)
+        self.assertEqual(replacement_sha256, digest(document.read_bytes()))
+        self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
 
         unmanaged = self.scratch / "unmanaged.md"
         unmanaged.write_text("user-owned\n", encoding="utf-8")
@@ -832,6 +876,10 @@ raise SystemExit(2)
         self.assertNotIn("mcp_servers={}", command)
         self.assertNotIn("--strict-config", command)
         contract = namespace["sanitized_contract"](command, document)
+        self.assertEqual(contract["schema_version"], "oracle-runner-contract-v3")
+        self.assertEqual(contract["response_schema"], "oracle-review-v2")
+        self.assertEqual(contract["handoff_schema"], "oracle-review-handoff-v2")
+        self.assertEqual(contract["document_publication"], "atomic-and-digest-verified")
         self.assertEqual(contract["timeout"], "81 minutes")
         self.assertEqual(namespace["ORACLE_TIMEOUT_SECONDS"], 81 * 60)
         timed_out_process = mock.Mock(pid=123)
@@ -888,6 +936,9 @@ raise SystemExit(2)
         self.assertNotIn("at least two materially different", skill_text)
         self.assertNotIn("independent final reviewer", skill_text)
         self.assertIn("not a claim of infallibility", skill_text)
+        self.assertIn("independently verifiable slices", skill_text)
+        self.assertIn("bounded task packets", skill_text)
+        self.assertIn("document_sha256", skill_text)
         self.assertEqual(namespace["delete_document"](document), document)
         self.assertFalse(document.exists())
 
@@ -945,7 +996,9 @@ raise SystemExit(2)
                 )
         self.assertEqual(result, 0)
         self.assertTrue(managed_document.exists())
-        self.assertEqual(json.loads(stdout.getvalue())["document_path"], str(managed_document.resolve()))
+        emitted_handoff = json.loads(stdout.getvalue())
+        self.assertEqual(emitted_handoff["document_path"], str(managed_document.resolve()))
+        self.assertEqual(emitted_handoff["document_sha256"], digest(managed_document.read_bytes()))
         self.assertFalse(captured["scratch"].exists())
 
     def test_official_skills_partial_failure_restores_exact_config_and_plugin_state(self) -> None:
@@ -1188,9 +1241,9 @@ raise SystemExit(2)
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
             {
-                "SKILL.md": "01d7a73d7b7f24abf01f51c1bf313221ca928f01c9fb4bb9ecae57c2de6d92e0",
+                "SKILL.md": "a7c70ab4b4d71fbd8756a425cfcc4ecd3f0999d8dd06e58a527a2cb346ba82ae",
                 "agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
-                "scripts/run_oracle.py": "6d77f87f69ef21dfdcc5ee5855853d8735b9fc8bf976f136e24fef2ba519ee09",
+                "scripts/run_oracle.py": "fe09de634e89298d461063fa680893593447356c9813715040a201b0e88c8285",
             },
         )
 

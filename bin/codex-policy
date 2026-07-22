@@ -89,9 +89,9 @@ EXPECTED_FILES = {
 REVIEWED_ARTIFACT_HASHES = {
     "global/AGENTS.md": "3ea5429374af481cb3e4e67fd8bac939db8bcb24bc7c9f70ccc57ebefe0e9a92",
     "global/official-skills.json": "a38e85df8183588b38924c8f162a2300e2a51270eb11ee17aaec4615aa13c036",
-    "global/skills/oracle-solver/SKILL.md": "01d7a73d7b7f24abf01f51c1bf313221ca928f01c9fb4bb9ecae57c2de6d92e0",
+    "global/skills/oracle-solver/SKILL.md": "a7c70ab4b4d71fbd8756a425cfcc4ecd3f0999d8dd06e58a527a2cb346ba82ae",
     "global/skills/oracle-solver/agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
-    "global/skills/oracle-solver/scripts/run_oracle.py": "6d77f87f69ef21dfdcc5ee5855853d8735b9fc8bf976f136e24fef2ba519ee09",
+    "global/skills/oracle-solver/scripts/run_oracle.py": "fe09de634e89298d461063fa680893593447356c9813715040a201b0e88c8285",
 }
 
 

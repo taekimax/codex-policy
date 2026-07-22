@@ -4,9 +4,12 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
+import hashlib
 import json
 import os
 from pathlib import Path
+import secrets
 import shutil
 import signal
 import stat
@@ -52,6 +55,7 @@ RESPONSE_SCHEMA: dict[str, Any] = {
         "verdict",
         "confidence",
         "answer",
+        "question_answers",
         "scope",
         "findings",
         "risks",
@@ -60,7 +64,7 @@ RESPONSE_SCHEMA: dict[str, Any] = {
         "unknowns",
     ],
     "properties": {
-        "schema_version": {"type": "string", "enum": ["oracle-review-v1"]},
+        "schema_version": {"type": "string", "enum": ["oracle-review-v2"]},
         "status": {
             "type": "string",
             "enum": ["complete", "insufficient_evidence", "blocked"],
@@ -71,6 +75,23 @@ RESPONSE_SCHEMA: dict[str, Any] = {
         },
         "confidence": {"type": "string", "enum": ["high", "medium", "low"]},
         "answer": {"type": "string", "minLength": 1},
+        "question_answers": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "required": ["question_index", "answer", "finding_ids"],
+                "properties": {
+                    "question_index": {"type": "integer", "minimum": 1},
+                    "answer": {"type": "string", "minLength": 1},
+                    "finding_ids": {
+                        "type": "array",
+                        "items": {"type": "string", "minLength": 1},
+                    },
+                },
+            },
+        },
         "scope": {
             "type": "object",
             "additionalProperties": False,
@@ -245,6 +266,13 @@ Hard boundaries:
 - Prefer direct file/test/log evidence. Cite paths and tight line ranges or exact commands/results.
 - Separate verified facts, inference, assumptions, and unknowns. Do not invent missing evidence.
 - Challenge the request's framing and prior attempts when the evidence warrants it.
+- Answer every request question exactly once in question_answers using its 1-based index. Reference
+  only finding IDs present in this response.
+- For planning, prefer independently verifiable vertical slices. State outcomes, scope and
+  non-goals, dependencies, invariants, evidence, risks or stop conditions, and acceptance evidence.
+  Leave routine implementation mechanics to the acting agent. Add exact sequences, pseudocode,
+  or minimal code only when a consequential dependency, concrete ambiguity, or evidenced failure
+  requires it; label such guidance advisory and assumption-bound.
 - Return only JSON conforming to the supplied schema. Use empty arrays rather than omitting fields.
 - For web evidence, prefer current primary sources, cite exact URLs, and distinguish web evidence
   from local evidence.
@@ -465,7 +493,7 @@ def classify_diagnostic(value: str) -> str:
     return "failure details suppressed"
 
 
-def read_response(path: Path) -> dict[str, Any]:
+def read_response(path: Path, question_count: int) -> dict[str, Any]:
     try:
         if path.stat().st_size > MAX_RESPONSE_BYTES:
             raise OracleError("Oracle response exceeds the size limit")
@@ -476,17 +504,17 @@ def read_response(path: Path) -> dict[str, Any]:
         payload = json.loads(raw.decode("utf-8"))
     except (UnicodeError, ValueError) as exc:
         raise OracleError("Oracle response is not valid UTF-8 JSON") from exc
-    validate_response(payload)
+    validate_response(payload, question_count)
     return payload
 
 
-def validate_response(payload: Any) -> None:
+def validate_response(payload: Any, question_count: int) -> None:
     if not isinstance(payload, dict):
         raise OracleError("Oracle response must be a JSON object")
     required = set(RESPONSE_SCHEMA["required"])
     if set(payload) != required:
         raise OracleError("Oracle response fields do not match the response contract")
-    if payload.get("schema_version") != "oracle-review-v1":
+    if payload.get("schema_version") != "oracle-review-v2":
         raise OracleError("Oracle response has an unsupported schema version")
     if payload.get("status") not in {"complete", "insufficient_evidence", "blocked"}:
         raise OracleError("Oracle response has an invalid status")
@@ -503,6 +531,8 @@ def validate_response(payload: Any) -> None:
         raise OracleError("a complete Oracle response cannot have an insufficient-evidence verdict")
     if payload["status"] == "insufficient_evidence" and payload["verdict"] != "insufficient_evidence":
         raise OracleError("an insufficient-evidence Oracle response must use the matching verdict")
+    if payload["status"] == "blocked" and payload["verdict"] == "proceed":
+        raise OracleError("a blocked Oracle response cannot recommend proceeding")
     if not isinstance(payload.get("answer"), str) or not payload["answer"].strip():
         raise OracleError("Oracle response answer is empty")
     for field in ("findings", "risks", "recommended_next_steps"):
@@ -523,6 +553,7 @@ def validate_response(payload: Any) -> None:
         "reasoning",
         "recommendation",
     }
+    finding_ids: set[str] = set()
     for index, finding in enumerate(payload["findings"]):
         if not isinstance(finding, dict) or set(finding) != finding_keys:
             raise OracleError(f"Oracle finding {index} has invalid fields")
@@ -530,7 +561,36 @@ def validate_response(payload: Any) -> None:
             raise OracleError(f"Oracle finding {index} has invalid severity")
         for field in ("id", "statement", "reasoning", "recommendation"):
             require_nonempty_string(finding[field], f"findings[{index}].{field}")
+        if finding["id"] in finding_ids:
+            raise OracleError("Oracle finding IDs must be unique")
+        finding_ids.add(finding["id"])
         require_string_list(finding["evidence"], f"findings[{index}].evidence", nonempty=True)
+    question_answers = payload.get("question_answers")
+    if not isinstance(question_answers, list):
+        raise OracleError("Oracle response field 'question_answers' must be an array")
+    expected_indices = list(range(1, question_count + 1))
+    actual_indices: list[int] = []
+    for index, question_answer in enumerate(question_answers):
+        if not isinstance(question_answer, dict) or set(question_answer) != {
+            "question_index",
+            "answer",
+            "finding_ids",
+        }:
+            raise OracleError(f"Oracle question answer {index} has invalid fields")
+        question_index = question_answer["question_index"]
+        if not isinstance(question_index, int) or isinstance(question_index, bool):
+            raise OracleError(f"Oracle question answer {index} has an invalid index")
+        actual_indices.append(question_index)
+        require_nonempty_string(question_answer["answer"], f"question_answers[{index}].answer")
+        require_string_list(
+            question_answer["finding_ids"], f"question_answers[{index}].finding_ids"
+        )
+        if len(question_answer["finding_ids"]) != len(set(question_answer["finding_ids"])):
+            raise OracleError(f"Oracle question answer {index} repeats a finding ID")
+        if not set(question_answer["finding_ids"]).issubset(finding_ids):
+            raise OracleError(f"Oracle question answer {index} references an unknown finding")
+    if actual_indices != expected_indices:
+        raise OracleError("Oracle question answers must cover every request question in order")
     risk_keys = {"risk", "likelihood", "impact", "mitigation"}
     for index, risk in enumerate(payload["risks"]):
         if not isinstance(risk, dict) or set(risk) != risk_keys:
@@ -607,50 +667,95 @@ def require_document_in_workspace(document: Path, workspace: Path) -> None:
         raise OracleError("the response document must be inside the requested workspace") from exc
 
 
-def fsync_directory(path: Path) -> None:
-    flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+def owned_destination_fingerprint(parent_fd: int, name: str) -> tuple[int, int, int, int] | None:
+    flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
     try:
-        descriptor = os.open(str(path), flags)
-        try:
-            os.fsync(descriptor)
-        finally:
-            os.close(descriptor)
+        descriptor = os.open(name, flags, dir_fd=parent_fd)
+    except FileNotFoundError:
+        return None
     except OSError as exc:
-        raise OracleError("the response document directory could not be synchronized") from exc
-
-
-def write_document(path: Path, payload: str) -> None:
-    existed = os.path.lexists(path)
-    flags = os.O_RDWR | getattr(os, "O_NOFOLLOW", 0)
-    flags |= 0 if existed else os.O_CREAT | os.O_EXCL
+        raise OracleError("the response document cannot be inspected safely") from exc
     try:
-        descriptor = os.open(str(path), flags, 0o644)
-        with os.fdopen(descriptor, "r+", encoding="utf-8") as handle:
+        with os.fdopen(descriptor, "r", encoding="utf-8") as handle:
             info = os.fstat(handle.fileno())
             if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_DOCUMENT_BYTES:
                 raise OracleError("the response document has an unsafe filesystem type or size")
-            if existed:
-                first_line = handle.readline().rstrip("\r\n")
-                if first_line != DOCUMENT_MARKER:
-                    raise OracleError("refusing to replace a document not owned by oracle-solver")
-            os.fchmod(handle.fileno(), 0o644)
-            handle.seek(0)
-            handle.truncate()
-            handle.write(payload)
+            first_line = handle.readline().rstrip("\r\n")
+            if first_line != DOCUMENT_MARKER:
+                raise OracleError("refusing to replace a document not owned by oracle-solver")
+            return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+    except UnicodeError as exc:
+        raise OracleError("the response document cannot be read safely") from exc
+
+
+def write_document(path: Path, payload: str) -> str:
+    data = payload.encode("utf-8")
+    if len(data) > MAX_DOCUMENT_BYTES:
+        raise OracleError("the rendered response document exceeds the size limit")
+    directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+    staging_name: str | None = None
+    try:
+        parent_fd = os.open(str(path.parent), directory_flags)
+    except OSError as exc:
+        raise OracleError("the response document directory cannot be inspected") from exc
+    try:
+        fcntl.flock(parent_fd, fcntl.LOCK_EX)
+        before = owned_destination_fingerprint(parent_fd, path.name)
+        staging_name = f".{path.name}.oracle-{secrets.token_hex(12)}.tmp"
+        staging_flags = (
+            os.O_WRONLY
+            | os.O_CREAT
+            | os.O_EXCL
+            | getattr(os, "O_NOFOLLOW", 0)
+        )
+        descriptor = os.open(staging_name, staging_flags, 0o600, dir_fd=parent_fd)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
             handle.flush()
+            os.fchmod(handle.fileno(), 0o644)
             os.fsync(handle.fileno())
-        fsync_directory(path.parent)
+        if owned_destination_fingerprint(parent_fd, path.name) != before:
+            raise OracleError("the response document changed during publication")
+        os.replace(
+            staging_name,
+            path.name,
+            src_dir_fd=parent_fd,
+            dst_dir_fd=parent_fd,
+        )
+        staging_name = None
+        os.fsync(parent_fd)
+        published_fd = os.open(
+            path.name,
+            os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0),
+            dir_fd=parent_fd,
+        )
+        with os.fdopen(published_fd, "rb") as handle:
+            published = handle.read(MAX_DOCUMENT_BYTES + 1)
+        if published != data:
+            raise OracleError("the published response document failed verification")
+        return hashlib.sha256(published).hexdigest()
     except OracleError:
         raise
-    except (OSError, UnicodeError) as exc:
+    except OSError as exc:
         raise OracleError("the managed response document could not be written") from exc
+    finally:
+        if staging_name is not None:
+            try:
+                os.unlink(staging_name, dir_fd=parent_fd)
+            except OSError:
+                pass
+        try:
+            fcntl.flock(parent_fd, fcntl.LOCK_UN)
+        except OSError:
+            pass
+        os.close(parent_fd)
 
 
 def markdown_list(items: Sequence[str], *, empty: str = "None recorded.") -> str:
     return "\n".join(f"- {item}" for item in items) if items else empty
 
 
-def render_document(response: Mapping[str, Any]) -> str:
+def render_document(response: Mapping[str, Any], questions: Sequence[str]) -> str:
     sections = [
         DOCUMENT_MARKER,
         "# Oracle Review",
@@ -663,6 +768,26 @@ def render_document(response: Mapping[str, Any]) -> str:
         "",
         str(response["answer"]).strip(),
         "",
+        "## Question answers",
+        "",
+    ]
+    for question_answer in response["question_answers"]:
+        question_index = question_answer["question_index"]
+        finding_ids = question_answer["finding_ids"]
+        sections.extend(
+            [
+                f"### Question {question_index}",
+                "",
+                str(questions[question_index - 1]).strip(),
+                "",
+                str(question_answer["answer"]).strip(),
+                "",
+                "Related findings: " + (", ".join(finding_ids) if finding_ids else "None."),
+                "",
+            ]
+        )
+    sections.extend(
+        [
         "## Scope reviewed",
         "",
         markdown_list(response["scope"]["reviewed"]),
@@ -673,7 +798,8 @@ def render_document(response: Mapping[str, Any]) -> str:
         "",
         "## Findings",
         "",
-    ]
+        ]
+    )
     if response["findings"]:
         for finding in response["findings"]:
             sections.extend(
@@ -745,14 +871,17 @@ def concise_summary(value: str, limit: int = 400) -> str:
     return normalized[: limit - 1].rstrip() + "…"
 
 
-def handoff(response: Mapping[str, Any], document: Path) -> dict[str, Any]:
+def handoff(
+    response: Mapping[str, Any], document: Path, document_sha256: str
+) -> dict[str, Any]:
     return {
-        "schema_version": "oracle-review-handoff-v1",
+        "schema_version": "oracle-review-handoff-v2",
         "status": response["status"],
         "verdict": response["verdict"],
         "confidence": response["confidence"],
         "summary": concise_summary(str(response["answer"])),
         "document_path": str(document),
+        "document_sha256": document_sha256,
     }
 
 
@@ -767,7 +896,7 @@ def delete_document(path: Path) -> Path:
 
 def sanitized_contract(command: Sequence[str], document: Path) -> dict[str, Any]:
     return {
-        "schema_version": "oracle-runner-contract-v2",
+        "schema_version": "oracle-runner-contract-v3",
         "model": MODEL,
         "reasoning_effort": EFFORT,
         "sandbox": "workspace-write-temporary-only",
@@ -779,6 +908,9 @@ def sanitized_contract(command: Sequence[str], document: Path) -> dict[str, Any]
         "write_exception": "managed-response-document-only",
         "target_workspace_write_scope": "document-only",
         "temporary_workspace_cleanup": "after-document-and-handoff",
+        "response_schema": "oracle-review-v2",
+        "handoff_schema": "oracle-review-handoff-v2",
+        "document_publication": "atomic-and-digest-verified",
         "document_path": str(document),
         "model_capability_verified": True,
         "recursive_guard": True,
@@ -850,9 +982,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 temporary,
                 child_environment,
             )
-            response = read_response(response_path)
-            write_document(document, render_document(response))
-            concise_handoff = handoff(response, document)
+            response = read_response(response_path, len(request["questions"]))
+            rendered = render_document(response, request["questions"])
+            document_sha256 = write_document(document, rendered)
+            concise_handoff = handoff(response, document, document_sha256)
             print(json.dumps(concise_handoff, ensure_ascii=False, indent=2), flush=True)
         return 0
     except (OracleError, OSError) as exc:

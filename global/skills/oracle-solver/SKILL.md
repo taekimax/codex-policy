@@ -42,6 +42,8 @@ Inspect the target yourself first. Send compact raw context rather than a persua
 
 Use empty arrays where needed. Separate facts from hypotheses, include only task-relevant evidence and uncertainty, and do not tell Oracle the answer you hope to receive.
 
+For planning, request independently verifiable slices with outcomes, scope and non-goals, dependencies, invariants, evidence, risks or stop conditions, and acceptance evidence. Leave routine implementation mechanics to the acting agent. Ask for exact sequencing, pseudocode, or minimal code only when a consequential dependency, concrete ambiguity, or evidenced failure requires it.
+
 ## Run the oracle
 
 Use a safe request file or stream JSON over stdin:
@@ -55,7 +57,7 @@ python3 <skill-dir>/scripts/run_oracle.py \
 
 Choose a new `.md` path in an existing directory, or reuse a document previously created by this runner. Never target a user-authored file. The runner sets timeout at 81 minutes. When the command runs asynchronously, check for its result with exponential backoff at 1, 2, 4, 8, 16, 20, 30 minutes. If the host requires more frequent keepalive updates, use them only to preserve liveness rather than to restart or duplicate the Oracle request. Do not start another oracle concurrently for the same decision.
 
-The runner returns exit code 0 only after validating the Oracle response and creating or replacing the managed document at its exact path. Standard output is a concise JSON handoff containing only status, verdict, confidence, a bounded summary, and the absolute `document_path`. The scratch workspace is cleaned after that handoff is emitted. Diagnostics are bounded and never include the request packet.
+The runner returns exit code 0 only after validating that every request question is answered, atomically publishing the managed document, and verifying its digest. Standard output is a concise JSON handoff containing status, verdict, confidence, a bounded summary, `document_path`, and `document_sha256`. The scratch workspace is cleaned after that handoff is emitted. Diagnostics are bounded and never include the request packet.
 
 When cleanup is explicitly in scope, delete only a document produced by the runner:
 
@@ -70,6 +72,6 @@ The runner refuses symlinks, non-Markdown paths, missing parents, oversized file
 
 Open the detailed document and assess its verdict, scope, evidence, risks, recommendations, assumptions, and unknowns. Check material recommendations against current evidence and the user's authority boundary. Explain meaningful discrepancies rather than treating the judgment as infallible or valid after its evidence and conditions change.
 
-After review, continue the parent task within its original authority. If implementation is requested, translate accepted advice into a scoped plan or changes and verify the result locally. If the user requested review only, report the oracle result and your verification without implementing.
+After review, continue the parent task within its original authority. If implementation is requested, re-check accepted advice against current evidence and translate it into bounded task packets rather than forwarding the full report by default. Preserve each slice's outcome, scope, constraints, rationale, ownership, acceptance evidence, and stop conditions while leaving implementation choices to the acting agent. Increase specificity only at a demonstrated ambiguity or failure; reassign judgment-heavy work instead of turning Oracle guidance into an implementation script. If the user requested review only, report the oracle result and your verification without implementing.
 
 Keep the user-facing response short: state the verdict and confidence, summarize the answer in one or two sentences, and provide a clickable absolute path to the detailed document. Do not duplicate the detailed findings in chat unless the user asks.
