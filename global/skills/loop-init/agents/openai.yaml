@@ -1,0 +1,4 @@
+interface:
+  display_name: "Loop Init"
+  short_description: "Initialize a safe, project-local loop workspace"
+  default_prompt: "Use $loop-init to inspect this repository, confirm its root and initialization mode, then create only the requested project-local .loop workspace."

@@ -53,6 +53,13 @@ EXPECTED_OWNED_KEYS = {
 
 CANONICAL_SSH_ORIGIN = "git@github.com:taekimax/codex-policy.git"
 CANONICAL_HTTPS_ORIGIN = "https://github.com/taekimax/codex-policy"
+CODEX_TURN_DIFF_REF = re.compile(
+    r"^refs/codex/turn-diffs/(?:"
+    r"captures/[0-9]{13}/[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}/base"
+    r"|checkpoints/[0-9a-f]{64}/[0-9a-f]{64}/[0-9]{13}/"
+    r"[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}"
+    r")$"
+)
 
 EXPECTED_FILES = {
     ".gitattributes",
@@ -70,6 +77,17 @@ EXPECTED_FILES = {
     "global/skills/oracle-solver/SKILL.md",
     "global/skills/oracle-solver/agents/openai.yaml",
     "global/skills/oracle-solver/scripts/run_oracle.py",
+    "global/skills/loop-init/SKILL.md",
+    "global/skills/loop-init/agents/openai.yaml",
+    "global/skills/loop-init/scripts/init_loop.py",
+    ".loop/README.md",
+    ".loop/00_request.md",
+    ".loop/01_spec.md",
+    ".loop/02_contract.md",
+    ".loop/03_plan.md",
+    ".loop/04_progress.md",
+    ".loop/05_decisions.md",
+    ".loop/06_log.md",
     "tests/test_acceptance.py",
     "vendor/tomlkit/LICENSE",
     "vendor/tomlkit/__init__.py",
@@ -87,12 +105,16 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_file.py",
 }
 REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "3ea5429374af481cb3e4e67fd8bac939db8bcb24bc7c9f70ccc57ebefe0e9a92",
-    "global/official-skills.json": "a38e85df8183588b38924c8f162a2300e2a51270eb11ee17aaec4615aa13c036",
+    "global/AGENTS.md": "77d52bc8be32b4b4cd88c43d11d6ebc4fe5d3246e5153367d2224af69605a34f",
+    "global/official-skills.json": "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
     "global/skills/oracle-solver/SKILL.md": "a7c70ab4b4d71fbd8756a425cfcc4ecd3f0999d8dd06e58a527a2cb346ba82ae",
     "global/skills/oracle-solver/agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
     "global/skills/oracle-solver/scripts/run_oracle.py": "fe09de634e89298d461063fa680893593447356c9813715040a201b0e88c8285",
+    "global/skills/loop-init/SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
+    "global/skills/loop-init/agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
+    "global/skills/loop-init/scripts/init_loop.py": "3bd80bcd2f84dd6b4d0bebf77dbe39b992f81f2a4b25be00bc485cc28dd2acea",
 }
+LOCAL_RUNTIME_DIRECTORIES = {".loop/backups"}
 
 
 class PolicyError(Exception):
@@ -754,7 +776,12 @@ def repository_files() -> Dict[str, Path]:
     found: Dict[str, Path] = {}
     for root, directories, files in os.walk(str(REPO_ROOT), followlinks=False):
         root_path = Path(root)
-        directories[:] = [name for name in directories if not (root_path == REPO_ROOT and name == ".git")]
+        directories[:] = [
+            name
+            for name in directories
+            if not (root_path == REPO_ROOT and name == ".git")
+            and (root_path / name).relative_to(REPO_ROOT).as_posix() not in LOCAL_RUNTIME_DIRECTORIES
+        ]
         for name in list(directories):
             candidate = root_path / name
             if candidate.is_symlink():
@@ -809,6 +836,7 @@ def audit_git_history() -> None:
                 "bin/codex-policy",
                 "bin/codex-skills-policy",
                 "global/skills/oracle-solver/scripts/run_oracle.py",
+                "global/skills/loop-init/scripts/init_loop.py",
             }
             else "100644"
         )
@@ -831,6 +859,8 @@ def audit_git_history() -> None:
         if ref in allowed_refs and not symbolic_target:
             continue
         if ref == "refs/remotes/origin/HEAD" and symbolic_target == "refs/remotes/origin/main":
+            continue
+        if not symbolic_target and CODEX_TURN_DIFF_REF.fullmatch(ref):
             continue
         fail("repository audit found a non-allowlisted Git reference")
     remotes = run_git(["remote"]).splitlines()
@@ -885,6 +915,7 @@ def audit_repository() -> None:
                 "bin/codex-policy",
                 "bin/codex-skills-policy",
                 "global/skills/oracle-solver/scripts/run_oracle.py",
+                "global/skills/loop-init/scripts/init_loop.py",
             }
         ):
             fail("repository audit found an unsafe executable mode")

@@ -41,6 +41,12 @@ SCHEMA = 1
 MANIFEST = REPO_ROOT / "global" / "official-skills.json"
 ORACLE_SOURCE = REPO_ROOT / "global" / "skills" / "oracle-solver"
 ORACLE_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/run_oracle.py")
+LOOP_INIT_SOURCE = REPO_ROOT / "global" / "skills" / "loop-init"
+LOOP_INIT_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/init_loop.py")
+VENDORED_USER_SKILLS = {
+    "oracle-solver": (ORACLE_SOURCE, ORACLE_FILES),
+    "loop-init": (LOOP_INIT_SOURCE, LOOP_INIT_FILES),
+}
 MAX_BYTES = 16 * 1024 * 1024
 PLUGIN_ID = re.compile(r"[a-z0-9][a-z0-9-]*@[a-z0-9][a-z0-9-]*\Z")
 NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*\Z")
@@ -106,6 +112,7 @@ class SkillsPlan:
     plugins_status: str
     standalone_status: str
     external_status: str
+    vendored_status: str
     system_status: str
     connector_status: str
     transaction_status: str
@@ -275,10 +282,15 @@ def load_manifest() -> Dict[str, Any]:
     vendored = value.get("vendored_user_skills")
     if vendored != [
         {
+            "name": "loop-init",
+            "source": "global/skills/loop-init",
+            "runtime_policy": "exact-reviewed-source",
+        },
+        {
             "name": "oracle-solver",
             "source": "global/skills/oracle-solver",
             "runtime_policy": "exact-reviewed-source",
-        }
+        },
     ]:
         fail("the vendored user-skill policy differs from the reviewed state")
     return value
@@ -665,11 +677,8 @@ def standalone_status(home: Path) -> str:
 
 def external_status(home: Path) -> str:
     context = home / "skills" / "context7-cli"
-    oracle = home / "skills" / "oracle-solver"
-    present = 0
     if lexists(context / "SKILL.md"):
         safe_skill_file(home, context / "SKILL.md")
-        present += 1
         skill = read_regular(context / "SKILL.md", required=True)
         policy = read_regular(context / "agents" / "openai.yaml")
         assert skill is not None
@@ -684,11 +693,21 @@ def external_status(home: Path) -> str:
             or not all(marker in skill for marker in narrow_markers)
         ):
             return "review"
-    oracle_present = any(lexists(oracle / relative) for relative in ORACLE_FILES)
-    if oracle_present:
-        for relative in ORACLE_FILES:
-            installed = oracle / relative
-            source = ORACLE_SOURCE / relative
+        return "current"
+    return "not_present"
+
+
+def vendored_status(home: Path) -> str:
+    present = 0
+    for name, (source_root, files) in VENDORED_USER_SKILLS.items():
+        installed_root = home / "skills" / name
+        installed_present = any(lexists(installed_root / relative) for relative in files)
+        if not installed_present:
+            continue
+        present += 1
+        for relative in files:
+            installed = installed_root / relative
+            source = source_root / relative
             if not lexists(installed):
                 return "review"
             safe_skill_file(home, installed)
@@ -696,16 +715,15 @@ def external_status(home: Path) -> str:
             source_bytes = read_regular(source, required=True)
             if installed_bytes != source_bytes:
                 return "review"
-            if relative == "scripts/run_oracle.py":
+            if relative.startswith("scripts/"):
                 try:
                     installed_executable = bool(stat.S_IMODE(installed.lstat().st_mode) & 0o111)
                     source_executable = bool(stat.S_IMODE(source.lstat().st_mode) & 0o111)
                 except OSError:
-                    fail("the Oracle skill cannot be inspected")
+                    fail("a vendored skill cannot be inspected")
                 if installed_executable != source_executable:
                     return "review"
-        present += 1
-    return "current" if present == 2 else "not_present"
+    return "current" if present == len(VENDORED_USER_SKILLS) else "not_present"
 
 
 def system_status(home: Path, manifest: Mapping[str, Any]) -> str:
@@ -819,9 +837,10 @@ def build_plan(home: Path, ignored_transaction: Optional[Path] = None) -> Skills
     if standalone == "blocking":
         blocked = True
     external = external_status(home)
+    vendored = vendored_status(home)
     system = system_status(home, manifest)
     connectors = connector_status(home, manifest)
-    if external == "review" or system != "current" or connectors == "review":
+    if external == "review" or vendored == "review" or system != "current" or connectors == "review":
         blocked = True
     desired, specs, disable_blocked = desired_disabled_paths(home, inventory, manifest)
     if disable_blocked:
@@ -839,6 +858,7 @@ def build_plan(home: Path, ignored_transaction: Optional[Path] = None) -> Skills
         plugins_status=plugin_status,
         standalone_status=standalone,
         external_status=external,
+        vendored_status=vendored,
         system_status=system,
         connector_status=connectors,
         transaction_status=transaction,
@@ -856,6 +876,7 @@ def report(plan: SkillsPlan) -> Dict[str, Any]:
         "skill_disables": "drifted" if plan.config_changed else "current",
         "standalone_curated": plan.standalone_status,
         "retained_external": plan.external_status,
+        "vendored_user_skills": plan.vendored_status,
         "retained_system": plan.system_status,
         "connector_skills": plan.connector_status,
         "transaction": plan.transaction_status,

@@ -5,5 +5,9 @@ __pycache__/
 .coverage
 htmlcov/
 .codex-policy/
+.loop/backups/
+.loop/traces/
+.loop/reports/
+.loop/artifacts/
 *.tmp
 *.bak

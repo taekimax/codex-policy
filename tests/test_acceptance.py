@@ -29,6 +29,8 @@ GLOBAL_POLICY = REPO / "global" / "AGENTS.md"
 OFFICIAL_SKILLS = REPO / "global" / "official-skills.json"
 ORACLE_SKILL = REPO / "global" / "skills" / "oracle-solver"
 ORACLE_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/run_oracle.py")
+LOOP_INIT_SKILL = REPO / "global" / "skills" / "loop-init"
+LOOP_INIT_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/init_loop.py")
 REQUIRED_PLUGIN_SKILLS = {
     "documents@openai-primary-runtime": {"documents"},
     "pdf@openai-primary-runtime": {"pdf"},
@@ -224,6 +226,13 @@ raise SystemExit(2)
             destination = target / relative
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ORACLE_SKILL / relative, destination)
+
+    def write_current_loop_init(self) -> None:
+        target = self.home / "skills" / "loop-init"
+        for relative in LOOP_INIT_FILES:
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(LOOP_INIT_SKILL / relative, destination)
 
     def make_current_skills_environment(
         self,
@@ -743,9 +752,11 @@ raise SystemExit(2)
         environment = self.make_current_skills_environment()
         self.write_current_context7()
         self.write_current_oracle()
+        self.write_current_loop_init()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
+        self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
 
         self.write_skill(self.home / "skills" / "context7-cli" / "SKILL.md")
         broad = self.run_skills_policy("plan", "--json", extra_environment=environment)
@@ -764,16 +775,51 @@ raise SystemExit(2)
         environment = self.make_current_skills_environment()
         self.write_current_context7()
         self.write_current_oracle()
+        self.write_current_loop_init()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
-        self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
+        self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
 
         runner = self.home / "skills" / "oracle-solver" / "scripts" / "run_oracle.py"
         runner.write_text(runner.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
         drifted = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(drifted.returncode, 0, drifted.stderr)
-        self.assertEqual(json.loads(drifted.stdout)["retained_external"], "review")
+        self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
         self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
+
+    def test_official_skills_loop_init_requires_exact_reviewed_source(self) -> None:
+        environment = self.make_current_skills_environment()
+        self.write_current_oracle()
+        self.write_current_loop_init()
+        current = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(current.returncode, 0, current.stderr)
+        self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
+
+        helper = self.home / "skills" / "loop-init" / "scripts" / "init_loop.py"
+        helper.write_text(helper.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+        drifted = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(drifted.returncode, 1, drifted.stderr)
+        self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
+        self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
+
+    def test_vendored_loop_init_preflights_markers_and_initializes_locally(self) -> None:
+        namespace = runpy.run_path(str(LOOP_INIT_SKILL / "scripts" / "init_loop.py"))
+        project = self.scratch / "loop-project"
+        project.mkdir()
+        result = namespace["apply_init"](project, "create-missing")
+        self.assertEqual(result.agents_action, "created")
+        self.assertTrue((project / ".loop" / "03_plan.md").is_file())
+        agents = (project / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("Optional Loop Workspace", agents)
+        self.assertNotIn("For non-trivial work", agents)
+
+        malformed = self.scratch / "loop-malformed"
+        malformed.mkdir()
+        markers = namespace["MANAGED_BEGIN"] + "\n" + namespace["MANAGED_END"]
+        (malformed / "AGENTS.md").write_text(markers + "\n" + markers + "\n", encoding="utf-8")
+        with self.assertRaises(namespace["LoopInitError"]):
+            namespace["apply_init"](malformed, "create-missing")
+        self.assertFalse((malformed / ".loop").exists())
 
     def test_vendored_oracle_runner_enforces_document_only_write_contract(self) -> None:
         namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
@@ -1134,6 +1180,39 @@ raise SystemExit(2)
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "repository audit: passed")
 
+        commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(clone), text=True).strip()
+        valid_turn_diff = (
+            "refs/codex/turn-diffs/captures/1784711652982/"
+            "1fd240b7-2231-4ae9-afcd-dee7b21e77f7/base"
+        )
+        subprocess.run(["git", "update-ref", valid_turn_diff, commit], cwd=str(clone), check=True)
+        valid_runtime_ref = subprocess.run(
+            [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
+            cwd=str(clone),
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(valid_runtime_ref.returncode, 0, valid_runtime_ref.stderr)
+        subprocess.run(["git", "update-ref", "-d", valid_turn_diff], cwd=str(clone), check=True)
+
+        invalid_turn_diff = "refs/codex/turn-diffs/captures/not-a-runtime-ref"
+        subprocess.run(["git", "update-ref", invalid_turn_diff, commit], cwd=str(clone), check=True)
+        invalid_runtime_ref = subprocess.run(
+            [sys.executable, str(clone / "bin" / "codex-policy"), "audit-repo"],
+            cwd=str(clone),
+            env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        self.assertEqual(invalid_runtime_ref.returncode, 2)
+        self.assertIn("non-allowlisted Git reference", invalid_runtime_ref.stderr)
+        subprocess.run(["git", "update-ref", "-d", invalid_turn_diff], cwd=str(clone), check=True)
+
         subprocess.run(
             ["git", "remote", "set-url", "origin", "https://github.com/taekimax/codex-policy.git"],
             cwd=str(clone),
@@ -1229,14 +1308,16 @@ raise SystemExit(2)
         self.assertNotIn("reasoning effort", policy_text)
         self.assertNotIn("Oracle", policy_text)
         self.assertNotIn("$oracle-solver", policy_text)
+        self.assertIn("consider `$loop-init` in read-only `inspect` mode", policy_text)
+        self.assertIn("Inspection does not authorize writes", policy_text)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "3ea5429374af481cb3e4e67fd8bac939db8bcb24bc7c9f70ccc57ebefe0e9a92",
+            "77d52bc8be32b4b4cd88c43d11d6ebc4fe5d3246e5153367d2224af69605a34f",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "a38e85df8183588b38924c8f162a2300e2a51270eb11ee17aaec4615aa13c036",
+            "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
         )
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
@@ -1246,6 +1327,17 @@ raise SystemExit(2)
                 "scripts/run_oracle.py": "fe09de634e89298d461063fa680893593447356c9813715040a201b0e88c8285",
             },
         )
+        self.assertEqual(
+            {relative: digest((LOOP_INIT_SKILL / relative).read_bytes()) for relative in LOOP_INIT_FILES},
+            {
+                "SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
+                "agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
+                "scripts/init_loop.py": "3bd80bcd2f84dd6b4d0bebf77dbe39b992f81f2a4b25be00bc485cc28dd2acea",
+            },
+        )
+        loop_text = (LOOP_INIT_SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Policy-triggered use is inspect-only", loop_text)
+        self.assertIn("does not authorize initialization", loop_text)
 
 
 if __name__ == "__main__":
