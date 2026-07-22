@@ -1,4 +1,4 @@
 interface:
   display_name: "Oracle Solver"
-  short_description: "Independent planning and problem-solving review"
-  default_prompt: "Use $oracle-solver for a bounded independent planning, blocked-problem, or high-value review under the current evidence and constraints, save the detailed result in a managed Markdown document, and return its path before continuing."
+  short_description: "Independent judgment for difficult decisions"
+  default_prompt: "Use $oracle-solver for a bounded independent judgment under the current evidence and constraints, then return the managed review path before continuing."

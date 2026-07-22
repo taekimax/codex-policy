@@ -836,8 +836,12 @@ raise SystemExit(2)
         skill_text = (ORACLE_SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertNotIn("read-only", skill_text.lower())
         self.assertIn("1, 2, 4, 8, 16, and then 20 minutes", skill_text)
-        self.assertIn("During planning for substantial multi-step work", skill_text)
-        self.assertIn("Do not request a follow-up merely to confirm corrections", skill_text)
+        self.assertIn("Invoke Oracle when the user explicitly requests it", skill_text)
+        self.assertIn("calling agent decides", skill_text)
+        self.assertIn("latency, token and context cost", skill_text)
+        self.assertIn("without requiring a fixed threshold", skill_text)
+        self.assertIn("prior use neither requires nor forbids another call", skill_text)
+        self.assertNotIn("at least two materially different", skill_text)
         self.assertNotIn("independent final reviewer", skill_text)
         self.assertIn("not a claim of infallibility", skill_text)
         self.assertEqual(namespace["delete_document"](document), document)
@@ -1119,19 +1123,29 @@ raise SystemExit(2)
         result = self.run_policy("audit-repo")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
+        policy_text = GLOBAL_POLICY.read_text(encoding="utf-8")
+        self.assertIn("Use subagents for independent, separable work", policy_text)
+        self.assertIn("The main agent integrates and verifies the results", policy_text)
+        self.assertIn("Give each file or external destination one concurrent writer", policy_text)
+        self.assertNotIn("### Model routing", policy_text)
+        self.assertNotIn("gpt-5.6", policy_text)
+        self.assertNotIn("reasoning effort", policy_text)
+        self.assertNotIn("Oracle", policy_text)
+        self.assertNotIn("$oracle-solver", policy_text)
+        self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "f02c56dd8ba2f922c27afdb842428ef88c0917a8b8666d1f8a974593d16398f8",
+            "fc08b936c1f476566b2ac5379bc8ee767b19ce9b62079c2ace11409b1c178308",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "90d273e3e3f1a76a86d1a162f49dfa4cf12779986b27106d121af6c9bf0676e5",
+            "a38e85df8183588b38924c8f162a2300e2a51270eb11ee17aaec4615aa13c036",
         )
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
             {
-                "SKILL.md": "142ee16180a4c183f384854dedb588d241c54689fc8387defc85938b95c7c318",
-                "agents/openai.yaml": "a634149a74b503317eaeed16e1120eba4ee26e6dbf5b0c17508d7703c0c236b1",
+                "SKILL.md": "8737c89627ad1882d500884af40185bd9d126d1633c4048ee9f7d61b1d2505a4",
+                "agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
                 "scripts/run_oracle.py": "0cdd8059b2aa46ee0dc89438765323827d7088e21db31ca8431a697bef7beaa1",
             },
         )

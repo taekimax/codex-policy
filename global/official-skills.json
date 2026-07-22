@@ -125,8 +125,7 @@
     {"kind": "user", "skill": "web-design-guidelines"}
   ],
   "retained_external_skills": [
-    {"name": "context7-cli", "policy": "implicit-narrow"},
-    {"name": "oracle-solver", "policy": "planning-stuck-or-high-value-review"}
+    {"name": "context7-cli", "policy": "implicit-narrow"}
   ],
   "vendored_user_skills": [
     {"name": "oracle-solver", "source": "global/skills/oracle-solver", "runtime_policy": "exact-reviewed-source"}
