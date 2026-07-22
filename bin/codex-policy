@@ -87,11 +87,11 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_file.py",
 }
 REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "fc08b936c1f476566b2ac5379bc8ee767b19ce9b62079c2ace11409b1c178308",
+    "global/AGENTS.md": "3ea5429374af481cb3e4e67fd8bac939db8bcb24bc7c9f70ccc57ebefe0e9a92",
     "global/official-skills.json": "a38e85df8183588b38924c8f162a2300e2a51270eb11ee17aaec4615aa13c036",
-    "global/skills/oracle-solver/SKILL.md": "8737c89627ad1882d500884af40185bd9d126d1633c4048ee9f7d61b1d2505a4",
+    "global/skills/oracle-solver/SKILL.md": "01d7a73d7b7f24abf01f51c1bf313221ca928f01c9fb4bb9ecae57c2de6d92e0",
     "global/skills/oracle-solver/agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
-    "global/skills/oracle-solver/scripts/run_oracle.py": "0cdd8059b2aa46ee0dc89438765323827d7088e21db31ca8431a697bef7beaa1",
+    "global/skills/oracle-solver/scripts/run_oracle.py": "6d77f87f69ef21dfdcc5ee5855853d8735b9fc8bf976f136e24fef2ba519ee09",
 }
 
 

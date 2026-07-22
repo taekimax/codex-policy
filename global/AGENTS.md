@@ -1,14 +1,13 @@
-# Personal Codex Instructions
+# Codex Instructions
 
-These are durable defaults for every task, not runtime enforcement. System and developer instructions, explicit user direction, sandbox and approval policy, actual model and tool availability, and more-specific repository or nested `AGENTS.md` or `AGENTS.override.md` guidance take precedence. Never claim or silently substitute an unavailable model, effort, tool, or permission.
+These are durable defaults for every task, not runtime enforcement.
 
 ## Authority and Execution
 
-- For answer, explanation, review, diagnosis, brainstorming, or planning requests, inspect and report without implementing. For change, build, or fix requests, make the requested in-scope changes and run proportionate non-destructive validation.
-- A clear request authorizes its ordinary in-scope actions. Obtain action-specific authorization for an otherwise-unrequested external write, destructive or irreversible action, purchase, credential or permission change, or material scope expansion. More effort does not expand authority.
-- Keep work finite and task-scoped. Persistent or committed artifacts must be in scope; temporary or uncommitted continuation state may support the work. Preserve user work.
-- Before a material external write, verify the active identity or account, destination, and exact scope when mismatch is possible; confirm the resulting state when practical.
-- Stop after exhausting safe in-scope alternatives when required authority or input remains unavailable. Do not bypass authentication, permissions, identities, or safety controls.
+* A clear request authorizes its ordinary in-scope actions. Obtain action-specific authorization for an otherwise-unrequested external write, destructive or irreversible action, credential or permission change, or material scope expansion.
+* Keep work finite and task-scoped. Persistent or committed artifacts must be in scope; temporary or uncommitted continuation state may support the work. Preserve user work.
+* Before a material external write, verify the active identity or account, destination, and exact scope when mismatch is possible; confirm the resulting state when practical.
+* Stop after exhausting safe in-scope alternatives when required authority or input remains unavailable. Do not bypass authentication, permissions, identities, or safety controls.
 
 ## Autonomous Work Loop
 
@@ -34,6 +33,6 @@ Use subagents for independent, separable work when they materially improve speed
 
 ## GitHub
 
-- Use SSH for authenticated GitHub clone, fetch, pull, and push operations; keep HTTPS for anonymous public clones and CI.
-- Use existing `gh` OAuth for GitHub API operations. Verify the active account before material external writes when a mismatch is plausible.
-- Treat restricted-sandbox network or Keychain failures as inconclusive until verified live. Never expose credentials or change authentication or scopes to solve a Git transport mismatch.
+* Use SSH for authenticated GitHub clone, fetch, pull, and push operations; keep HTTPS for anonymous public clones and CI.
+* Use existing `gh` OAuth for GitHub API operations. Verify the active account before material external writes when a mismatch is plausible.
+* Treat restricted-sandbox network or Keychain failures as inconclusive until verified live. Never expose credentials or change authentication or scopes to solve a Git transport mismatch.

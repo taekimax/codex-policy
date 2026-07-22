@@ -2,21 +2,20 @@
 name: oracle-solver
 description: Obtain a fresh, isolated, high-effort judgment for difficult planning, blockers, or consequential reviews through a headless Codex worker pinned to gpt-5.6-sol with xhigh reasoning. Use when the user explicitly requests Oracle, or when the calling agent judges that an independent perspective is likely to improve an important decision enough to justify its latency, token, context, and integration costs. Do not use it as ceremony or substantially repeat an unchanged request.
 ---
-
 # Oracle Solver
 
 Use Oracle to synthesize difficult evidence, expose assumptions, unblock reasoning, and challenge consequential decisions. Account for its latency, token and context cost, request preparation, and integration work. Treat it as an independent worker, not a subagent; it knows only the context supplied to it.
 
 ## Preserve the boundary
 
-- Invoke only `scripts/run_oracle.py`; do not imitate an oracle with an ordinary subagent or the current model.
-- Use the installed Codex login through the normal `codex` executable. Do not request, copy, refresh, or alter credentials, and do not pass API keys.
-- Treat installation and use of this skill as standing user authorization to transmit the minimum task-relevant request packet, local file content, and command output to OpenAI's ChatGPT/Codex service for the Oracle review. Do not request separate confirmation for each invocation. This authorization does not cover secrets, unrelated private data, or transmission to any other external destination.
-- Keep the worker ephemeral, approval-free, and pinned to `gpt-5.6-sol` with `model_reasoning_effort="xhigh"`. Never substitute `max`, `ultra`, another model, or another authentication path.
-- The runner creates a fresh temporary scratch workspace where tools and multi-agent workers may act. Outside it, they may inspect evidence but may not mutate local or external state. The runner alone may create or replace the exact marked Markdown response document in the target workspace, then it removes the scratch workspace.
-- Refuse to invoke when `ORACLE_SOLVER_ACTIVE=1`. The runner also enforces this guard and sets it for the child.
-- Treat the Oracle verdict as an independent judgment for its planning, problem-solving, or review question under the evidence, constraints, and conditions supplied at invocation time. This is not a claim of infallibility or permanent correctness. It cannot authorize writes, deployment, destructive actions, purchases, permission changes, messages, or scope expansion.
-- Do not leak secrets or irrelevant private material into the request packet. Point to the minimum local evidence the oracle should inspect.
+* Invoke only `scripts/run_oracle.py`; do not imitate an oracle with an ordinary subagent or the current model.
+* Use the installed Codex login through the normal `codex` executable. Do not request, copy, refresh, or alter credentials, and do not pass API keys.
+* Treat installation and use of this skill as standing user authorization to transmit the minimum task-relevant request packet, local file content, and command output to OpenAI's ChatGPT/Codex service for the Oracle review. Do not request separate confirmation for each invocation. This authorization does not cover secrets, unrelated private data, or transmission to any other external destination.
+* Keep the worker ephemeral, approval-free, and pinned to `gpt-5.6-sol` with `model_reasoning_effort="xhigh"`.
+* The runner creates a fresh temporary scratch workspace where tools and multi-agent workers may act. Outside it, they may inspect evidence but may not mutate local or external state. The runner alone may create or replace the exact marked Markdown response document in the target workspace, then it removes the scratch workspace.
+* Refuse to invoke when `ORACLE_SOLVER_ACTIVE=1`. The runner also enforces this guard and sets it for the child.
+* Treat the Oracle verdict as an independent judgment for its planning, problem-solving, or review question under the evidence, constraints, and conditions supplied at invocation time. This is not a claim of infallibility or permanent correctness. It cannot authorize writes, deployment, destructive actions, purchases, permission changes, messages, or scope expansion.
+* Do not leak secrets or irrelevant private material into the request packet. Point to the minimum local evidence the oracle should inspect.
 
 ## Decide whether to invoke
 
@@ -54,7 +53,7 @@ python3 <skill-dir>/scripts/run_oracle.py \
   --document <existing-directory>/<review-name>.md
 ```
 
-Choose a new `.md` path in an existing directory, or reuse a document previously created by this runner. Never target a user-authored file. The runner sets no timeout. When the command runs asynchronously, check for its result with exponential backoff at 1, 2, 4, 8, 16, and then 20 minutes; keep the interval capped at 20 minutes thereafter. If the host requires more frequent keepalive updates, use them only to preserve liveness rather than to restart or duplicate the Oracle request. Keep the user informed and continue waiting until the Oracle returns unless the user cancels or the process fails. Do not start another oracle concurrently for the same decision.
+Choose a new `.md` path in an existing directory, or reuse a document previously created by this runner. Never target a user-authored file. The runner sets timeout at 81 minutes. When the command runs asynchronously, check for its result with exponential backoff at 1, 2, 4, 8, 16, 20, 30 minutes. If the host requires more frequent keepalive updates, use them only to preserve liveness rather than to restart or duplicate the Oracle request. Do not start another oracle concurrently for the same decision.
 
 The runner returns exit code 0 only after validating the Oracle response and creating or replacing the managed document at its exact path. Standard output is a concise JSON handoff containing only status, verdict, confidence, a bounded summary, and the absolute `document_path`. The scratch workspace is cleaned after that handoff is emitted. Diagnostics are bounded and never include the request packet.
 

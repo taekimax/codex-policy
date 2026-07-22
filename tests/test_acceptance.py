@@ -832,10 +832,54 @@ raise SystemExit(2)
         self.assertNotIn("mcp_servers={}", command)
         self.assertNotIn("--strict-config", command)
         contract = namespace["sanitized_contract"](command, document)
-        self.assertEqual(contract["timeout"], "none")
+        self.assertEqual(contract["timeout"], "81 minutes")
+        self.assertEqual(namespace["ORACLE_TIMEOUT_SECONDS"], 81 * 60)
+        timed_out_process = mock.Mock(pid=123)
+        timed_out_process.communicate.side_effect = subprocess.TimeoutExpired(
+            command, namespace["ORACLE_TIMEOUT_SECONDS"]
+        )
+        terminate = mock.Mock()
+        with (
+            mock.patch.object(namespace["subprocess"], "Popen", return_value=timed_out_process),
+            mock.patch.dict(namespace["run_codex"].__globals__, {"terminate_process": terminate}),
+            self.assertRaisesRegex(namespace["OracleError"], "81-minute timeout"),
+        ):
+            namespace["run_codex"](command, "prompt", self.scratch, {})
+        timed_out_process.communicate.assert_called_once_with(
+            "prompt", timeout=namespace["ORACLE_TIMEOUT_SECONDS"]
+        )
+        terminate.assert_called_once_with(timed_out_process)
+
+        graceful_process = mock.Mock(pid=456)
+        graceful_process.communicate.return_value = ("", "")
+        with mock.patch.object(namespace["os"], "killpg") as killpg:
+            namespace["terminate_process"](graceful_process)
+        killpg.assert_called_once_with(graceful_process.pid, namespace["signal"].SIGTERM)
+        graceful_process.communicate.assert_called_once_with(timeout=2)
+        graceful_process.kill.assert_not_called()
+
+        retained_pipe_process = mock.Mock(pid=789)
+        retained_pipe_process.communicate.side_effect = [
+            subprocess.TimeoutExpired(command, 2),
+            ("", ""),
+        ]
+        with mock.patch.object(namespace["os"], "killpg") as killpg:
+            namespace["terminate_process"](retained_pipe_process)
+        self.assertEqual(
+            killpg.call_args_list,
+            [
+                mock.call(retained_pipe_process.pid, namespace["signal"].SIGTERM),
+                mock.call(retained_pipe_process.pid, namespace["signal"].SIGKILL),
+            ],
+        )
+        self.assertEqual(
+            retained_pipe_process.communicate.call_args_list,
+            [mock.call(timeout=2), mock.call()],
+        )
         skill_text = (ORACLE_SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertNotIn("read-only", skill_text.lower())
-        self.assertIn("1, 2, 4, 8, 16, and then 20 minutes", skill_text)
+        self.assertIn("runner sets timeout at 81 minutes", skill_text)
+        self.assertIn("1, 2, 4, 8, 16, 20, 30 minutes", skill_text)
         self.assertIn("Invoke Oracle when the user explicitly requests it", skill_text)
         self.assertIn("calling agent decides", skill_text)
         self.assertIn("latency, token and context cost", skill_text)
@@ -1135,7 +1179,7 @@ raise SystemExit(2)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "fc08b936c1f476566b2ac5379bc8ee767b19ce9b62079c2ace11409b1c178308",
+            "3ea5429374af481cb3e4e67fd8bac939db8bcb24bc7c9f70ccc57ebefe0e9a92",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
@@ -1144,9 +1188,9 @@ raise SystemExit(2)
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
             {
-                "SKILL.md": "8737c89627ad1882d500884af40185bd9d126d1633c4048ee9f7d61b1d2505a4",
+                "SKILL.md": "01d7a73d7b7f24abf01f51c1bf313221ca928f01c9fb4bb9ecae57c2de6d92e0",
                 "agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
-                "scripts/run_oracle.py": "0cdd8059b2aa46ee0dc89438765323827d7088e21db31ca8431a697bef7beaa1",
+                "scripts/run_oracle.py": "6d77f87f69ef21dfdcc5ee5855853d8735b9fc8bf976f136e24fef2ba519ee09",
             },
         )
 

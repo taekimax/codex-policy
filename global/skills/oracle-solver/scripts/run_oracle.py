@@ -22,6 +22,7 @@ MAX_REQUEST_BYTES = 256 * 1024
 MAX_RESPONSE_BYTES = 2 * 1024 * 1024
 MAX_DIAGNOSTIC_BYTES = 16 * 1024
 MAX_DOCUMENT_BYTES = 4 * 1024 * 1024
+ORACLE_TIMEOUT_SECONDS = 81 * 60
 DOCUMENT_MARKER = "<!-- oracle-solver:managed-review-v1 -->"
 
 REQUEST_FIELDS = (
@@ -393,23 +394,41 @@ def run_codex(
     except OSError as exc:
         raise OracleError("headless Codex could not be launched") from exc
     try:
-        _, stderr = process.communicate(prompt)
+        _, stderr = process.communicate(prompt, timeout=ORACLE_TIMEOUT_SECONDS)
+    except subprocess.TimeoutExpired as exc:
+        terminate_process(process)
+        raise OracleError("headless Codex exceeded the 81-minute timeout") from exc
     except KeyboardInterrupt as exc:
-        try:
-            os.killpg(process.pid, signal.SIGTERM)
-            process.wait(timeout=2)
-        except (OSError, subprocess.TimeoutExpired):
-            try:
-                os.killpg(process.pid, signal.SIGKILL)
-            except OSError:
-                process.kill()
-        process.communicate()
+        terminate_process(process)
         raise OracleError("headless Codex was interrupted") from exc
     if process.returncode != 0:
         detail = classify_diagnostic(stderr)
         suffix = f": {detail}" if detail else ""
         raise OracleError(f"headless Codex exited with status {process.returncode}{suffix}")
     return stderr
+
+
+def terminate_process(process: subprocess.Popen[str]) -> None:
+    try:
+        os.killpg(process.pid, signal.SIGTERM)
+    except OSError:
+        try:
+            process.terminate()
+        except OSError:
+            pass
+    try:
+        process.communicate(timeout=2)
+        return
+    except subprocess.TimeoutExpired:
+        pass
+    try:
+        os.killpg(process.pid, signal.SIGKILL)
+    except OSError:
+        try:
+            process.kill()
+        except OSError:
+            pass
+    process.communicate()
 
 
 def classify_diagnostic(value: str) -> str:
@@ -754,7 +773,7 @@ def sanitized_contract(command: Sequence[str], document: Path) -> dict[str, Any]
         "sandbox": "workspace-write-temporary-only",
         "ephemeral": True,
         "approval_policy": "never",
-        "timeout": "none",
+        "timeout": "81 minutes",
         "available_tools": "scratch-write-and-nonmutating-external-use-approved",
         "web_search": "enabled-nonmutating",
         "write_exception": "managed-response-document-only",
