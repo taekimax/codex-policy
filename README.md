@@ -11,10 +11,10 @@ The repository follows Codex's documented configuration boundaries: global guida
 | `global/AGENTS.md` | The complete global policy, installed byte-for-byte |
 | `global/config.owned.toml` | Only the semantic keys listed in `global/owned-keys.txt` |
 | `global/official-skills.json` | Reviewed skill/plugin catalog decisions and exact named disable policy |
-| `global/skills/oracle-solver/` | Reviewed public source snapshot of the global Oracle skill |
-| `global/skills/loop-init/` | Reviewed public source snapshot of the opt-in project-local loop initializer |
+| `global/skills/oracle-solver/` | Reviewed public source snapshot, installed by the core policy workflow |
+| `global/skills/loop-init/` | Reviewed public source snapshot, installed by the core policy workflow |
 
-The core installer manages only the global policy file and portable multi-agent limits. It deliberately does not auto-install a vendored user skill or manage the main-session model, reasoning effort, service tier, MCP servers, permissions, sandbox, approval policy, project trust, local paths, environment variables, credentials, marketplaces, feature flags, UI state, or runtime fingerprints.
+The core installer manages the global policy file, portable multi-agent limits, and the six declared files of the reviewed Oracle Solver and Loop Init user skills. `codex-policy apply --yes` validates those local sources, atomically installs or updates only their declared files, preserves unrelated skill files, and restores changed files after an ordinary failure. It does not manage the main-session model, reasoning effort, service tier, MCP servers, permissions, sandbox, approval policy, project trust, local paths, environment variables, credentials, marketplaces, feature flags, UI state, or runtime fingerprints.
 
 Official skills and plugins use a separate, explicit workflow. `bin/codex-skills-policy` dynamically resolves installed plugin and skill locations by logical name, disables only the reviewed skill set, and preserves all unrelated configuration. The reviewed state adds no standalone curated, experimental, or optional plugin; apply may restore a missing retained primary-runtime or bundled package from the host's current supported marketplace. It removes stale local Canva and GitHub duplicates, and also removes Game Studio because clean-session tests did not register its skills. Remote connector bundles remain externally managed.
 
@@ -28,12 +28,15 @@ Everything outside the owned-key manifest is preserved. The tool uses a pinned, 
 
 Requirements: macOS or Linux and Python 3.9 or newer. The core policy needs the Codex CLI only for its optional diagnostic check; the skill/plugin workflow requires it for sanitized inventory and supported plugin operations.
 
+> **Windows warning:** this repository does not provide a Windows deployment path. The installer fails closed before it plans or writes when its required POSIX advisory lock is unavailable. Do not bypass that guard or substitute an unreviewed WSL/PowerShell workflow; let an agent on the target Windows machine inspect the runtime and choose a separately reviewed, Windows-safe path.
+
 ```bash
 git clone https://github.com/taekimax/codex-policy
 cd codex-policy
 ./bin/codex-policy doctor
 ./bin/codex-policy apply --yes
 ./bin/codex-policy verify
+# Optional, separately gated marketplace/plugin reconciliation:
 ./bin/codex-skills-policy plan
 ./bin/codex-skills-policy apply --yes
 ./bin/codex-skills-policy verify
@@ -47,7 +50,7 @@ git remote set-url origin git@github.com:taekimax/codex-policy.git
 
 Generate and register a separate SSH key on each machine. Never copy a private key between machines. GitHub API operations continue to use the separately authenticated `gh` client.
 
-The reviewed Oracle Solver and Loop Init sources are intentionally explicit user-skill installations rather than automatic side effects of the core policy installer. Install or update either source only under explicit user direction, validate it with the appropriate source-level checks, and then run `./bin/codex-skills-policy verify` to confirm an installed copy exactly matches its snapshot. Loop Init is a per-repository initializer: global or project policy may select it for read-only inspection of a new repository task that benefits from durable records, but it must still confirm a selected root and mode before writing project-local `.loop/` files or a managed project `AGENTS.md` section. The vendored sources are authoritative for their respective behavior.
+The reviewed Oracle Solver and Loop Init sources are installed by the explicit `codex-policy apply --yes` confirmation. The core workflow validates their source format and executable modes, then verifies the installed copies byte-for-byte and by mode. `codex-skills-policy verify` independently reports whether they still match its reviewed snapshot, but it does not copy vendored user skills itself. Loop Init is a per-repository initializer: global or project policy may select it for read-only inspection of a new repository task that benefits from durable records, but it must still confirm a selected root and mode before writing project-local `.loop/` files or a managed project `AGENTS.md` section. The vendored sources are authoritative for their respective behavior.
 
 Then start a new Codex session so guidance and skill discovery run again. Opening Codex in this repository also loads the repo-level `AGENTS.md`, which directs the session through the same safe workflow.
 
@@ -66,7 +69,7 @@ codex-policy recover --apply --yes
 codex-policy audit-repo           public-repository safety audit
 ```
 
-`plan` is the default and creates nothing. `apply` takes an operating-system advisory lock, recomputes the plan, writes private local backups, atomically replaces only changed targets, and restores originals if an ordinary failure occurs. The operating system releases the lock after a crash; an interrupted process is detected on the next run and must be recovered before another apply. A no-op apply creates no backup transaction.
+`plan` is the default and creates nothing. `apply` takes an operating-system advisory lock, recomputes the plan, writes private local backups, atomically replaces only changed policy, configuration, and reviewed-user-skill targets, and restores originals if an ordinary failure occurs. The operating system releases the lock after a crash; an interrupted process is detected on the next run and must be recovered before another apply. A no-op apply creates no backup transaction.
 
 An existing `AGENTS.override.md`, invalid TOML, symlinked target, ambiguous owned path, concurrent modification, or unfinished transaction blocks writes. The tool reports only a sanitized status.
 

@@ -257,6 +257,15 @@ raise SystemExit(2)
         result = self.run_policy("apply", "--yes")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.home / "AGENTS.md").read_bytes(), GLOBAL_POLICY.read_bytes())
+        for source_root, files, destination_name in (
+            (ORACLE_SKILL, ORACLE_FILES, "oracle-solver"),
+            (LOOP_INIT_SKILL, LOOP_INIT_FILES, "loop-init"),
+        ):
+            for relative in files:
+                source = source_root / relative
+                destination = self.home / "skills" / destination_name / relative
+                self.assertEqual(destination.read_bytes(), source.read_bytes())
+                self.assertEqual(stat.S_IMODE(destination.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
         config = (self.home / "config.toml").read_text(encoding="utf-8")
         self.assertIn("max_threads = 6", config)
         self.assertIn("max_depth = 1", config)
@@ -266,6 +275,7 @@ raise SystemExit(2)
         verify = self.run_policy("verify", "--json")
         self.assertEqual(verify.returncode, 0, verify.stderr)
         self.assertEqual(json.loads(verify.stdout)["verified"], "passed")
+        self.assertEqual(json.loads(verify.stdout)["vendored_user_skills"], "current")
         transactions = self.transaction_directories()
         self.assertEqual(len(transactions), 1)
         before = (self.home / "config.toml").read_bytes()
@@ -394,6 +404,45 @@ raise SystemExit(2)
         preview = self.run_policy("recover")
         self.assertEqual(preview.returncode, 0, preview.stderr)
         self.assertIn("result: none", preview.stdout)
+
+    def test_injected_failure_removes_new_vendored_skill_directories(self) -> None:
+        self.home.mkdir(mode=0o700)
+        result = self.run_policy(
+            "apply",
+            "--yes",
+            extra_environment={"CODEX_POLICY_TEST_FAIL_AFTER": "3"},
+        )
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.home / "AGENTS.md").exists())
+        self.assertFalse((self.home / "config.toml").exists())
+        self.assertFalse((self.home / "skills").exists())
+
+    def test_core_policy_repairs_vendored_skill_content_and_mode_drift(self) -> None:
+        initial = self.run_policy("apply", "--yes")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        target = self.home / "skills" / "loop-init" / "scripts" / "init_loop.py"
+        target.write_text(target.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+        target.chmod(0o644)
+        plan = self.run_policy("plan", "--json")
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["vendored_user_skills"], "drifted")
+        repaired = self.run_policy("apply", "--yes")
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        source = LOOP_INIT_SKILL / "scripts" / "init_loop.py"
+        self.assertEqual(target.read_bytes(), source.read_bytes())
+        self.assertEqual(stat.S_IMODE(target.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
+
+    @unittest.skipIf(os.name == "nt", "symlink behavior differs on Windows")
+    def test_symlinked_vendored_skill_directory_is_rejected(self) -> None:
+        self.home.mkdir(mode=0o700)
+        outside = self.scratch / "outside-skills"
+        outside.mkdir()
+        (self.home / "skills").symlink_to(outside, target_is_directory=True)
+        result = self.run_policy("apply", "--yes")
+        self.assertEqual(result.returncode, 2)
+        self.assertFalse((self.home / "AGENTS.md").exists())
+        self.assertFalse((self.home / "config.toml").exists())
+        self.assertEqual(list(outside.iterdir()), [])
 
     def test_interrupted_transaction_recovery(self) -> None:
         self.home.mkdir(mode=0o700)
@@ -1308,12 +1357,15 @@ raise SystemExit(2)
         self.assertNotIn("reasoning effort", policy_text)
         self.assertNotIn("Oracle", policy_text)
         self.assertNotIn("$oracle-solver", policy_text)
+        self.assertIn("set an explicit bounded job count", policy_text)
+        self.assertIn("avoid exhausting system memory", policy_text)
+        self.assertIn("never rely on unbounded default parallelism", policy_text)
         self.assertIn("consider `$loop-init` in read-only `inspect` mode", policy_text)
         self.assertIn("Inspection does not authorize writes", policy_text)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "77d52bc8be32b4b4cd88c43d11d6ebc4fe5d3246e5153367d2224af69605a34f",
+            "fbca3e24c52fd75c18531b9e236861d9a645b8771f68f785eb54aa847506c0d4",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),

@@ -25,6 +25,8 @@ Prefer falsification-driven progress: when a plausible theory is low-risk and su
 
 For extended or resumable work, keep the minimum safe continuation state using project conventions. After compaction or resumption, re-anchor from current intent and authoritative artifacts: outcome, constraints, decisions, progress, evidence, verification, and next step. Never store secrets. Inspect evidence before retrying and remain within the original scope and authority.
 
+For compiler-heavy native builds, set an explicit bounded job count to avoid exhausting system memory; never rely on unbounded default parallelism.
+
 When starting work in a selected repository that has no established continuation convention, consider `$loop-init` in read-only `inspect` mode if the task is likely to benefit from durable, resumable project records. Do not use it for a small or read-only task merely because the repository is new. Inspection does not authorize writes: show the detected root and state, then obtain user confirmation before creating `.loop/` files or changing a project `AGENTS.md` section.
 
 Completion requires real verification appropriate to the task. Review the final result, diff, or behavior against the request; report what passed, failed, or was not run; and expose remaining uncertainty.

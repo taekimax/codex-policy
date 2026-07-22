@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Portable, fail-closed installer for the public codex-policy repository."""
+"""Portable, fail-closed installer for the public Codex policy and reviewed user skills."""
 
 from __future__ import annotations
 
@@ -41,7 +41,53 @@ SCHEMA = 1
 POLICY_SOURCE = REPO_ROOT / "global" / "AGENTS.md"
 CONFIG_SOURCE = REPO_ROOT / "global" / "config.owned.toml"
 OWNED_SOURCE = REPO_ROOT / "global" / "owned-keys.txt"
-TARGET_NAMES = ("AGENTS.md", "config.toml")
+VENDORED_USER_SKILL_FILES = (
+    (
+        "oracle-solver-instructions",
+        "oracle-solver",
+        REPO_ROOT / "global" / "skills" / "oracle-solver" / "SKILL.md",
+        "skills/oracle-solver/SKILL.md",
+        0o644,
+    ),
+    (
+        "oracle-solver-metadata",
+        "oracle-solver",
+        REPO_ROOT / "global" / "skills" / "oracle-solver" / "agents" / "openai.yaml",
+        "skills/oracle-solver/agents/openai.yaml",
+        0o644,
+    ),
+    (
+        "oracle-solver-runner",
+        "oracle-solver",
+        REPO_ROOT / "global" / "skills" / "oracle-solver" / "scripts" / "run_oracle.py",
+        "skills/oracle-solver/scripts/run_oracle.py",
+        0o755,
+    ),
+    (
+        "loop-init-instructions",
+        "loop-init",
+        REPO_ROOT / "global" / "skills" / "loop-init" / "SKILL.md",
+        "skills/loop-init/SKILL.md",
+        0o644,
+    ),
+    (
+        "loop-init-metadata",
+        "loop-init",
+        REPO_ROOT / "global" / "skills" / "loop-init" / "agents" / "openai.yaml",
+        "skills/loop-init/agents/openai.yaml",
+        0o644,
+    ),
+    (
+        "loop-init-helper",
+        "loop-init",
+        REPO_ROOT / "global" / "skills" / "loop-init" / "scripts" / "init_loop.py",
+        "skills/loop-init/scripts/init_loop.py",
+        0o755,
+    ),
+)
+VENDORED_FILE_NAMES = tuple(item[0] for item in VENDORED_USER_SKILL_FILES)
+VENDORED_TARGETS = {item[0]: item[3] for item in VENDORED_USER_SKILL_FILES}
+TARGET_NAMES = ("AGENTS.md", "config.toml", *VENDORED_FILE_NAMES)
 INCOMPLETE_STATES = {"prepared", "applying", "recovery_required"}
 MAX_TARGET_BYTES = 16 * 1024 * 1024
 MAX_REPO_BYTES = 1024 * 1024
@@ -105,7 +151,7 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_file.py",
 }
 REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "77d52bc8be32b4b4cd88c43d11d6ebc4fe5d3246e5153367d2224af69605a34f",
+    "global/AGENTS.md": "fbca3e24c52fd75c18531b9e236861d9a645b8771f68f785eb54aa847506c0d4",
     "global/official-skills.json": "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
     "global/skills/oracle-solver/SKILL.md": "a7c70ab4b4d71fbd8756a425cfcc4ecd3f0999d8dd06e58a527a2cb346ba82ae",
     "global/skills/oracle-solver/agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
@@ -126,11 +172,12 @@ class FilePlan:
     name: str
     before: Optional[bytes]
     after: bytes
+    before_mode: Optional[int]
     mode: int
 
     @property
     def changed(self) -> bool:
-        return self.before != self.after
+        return self.before != self.after or self.before_mode != self.mode
 
     @property
     def status(self) -> str:
@@ -191,6 +238,90 @@ def read_regular(path: Path, *, required: bool, limit: int) -> Optional[bytes]:
         return path.read_bytes()
     except OSError:
         fail("a managed file cannot be read")
+
+
+def target_path(home: Path, name: str) -> Path:
+    return home / VENDORED_TARGETS.get(name, name)
+
+
+def managed_target_path(home: Path, name: str) -> Path:
+    target = target_path(home, name)
+    if name in VENDORED_TARGETS:
+        validate_skill_target_parents(home, target)
+    return target
+
+
+def file_mode(path: Path) -> Optional[int]:
+    if not lexists(path):
+        return None
+    try:
+        info = path.lstat()
+    except OSError:
+        fail("a managed file mode cannot be inspected")
+    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+        fail("a managed file has an unsafe filesystem type")
+    return stat.S_IMODE(info.st_mode)
+
+
+def validate_skill_target_parents(home: Path, target: Path) -> None:
+    try:
+        relative = target.relative_to(home)
+    except ValueError:
+        fail("a managed skill target is outside the Codex home")
+    current = home
+    for part in relative.parts[:-1]:
+        current = current / part
+        if not lexists(current):
+            continue
+        try:
+            info = current.lstat()
+        except OSError:
+            fail("a managed skill directory cannot be inspected")
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+            fail("a managed skill directory has an unsafe filesystem type")
+
+
+def validate_vendored_sources() -> Dict[str, bytes]:
+    sources: Dict[str, bytes] = {}
+    instructions: Dict[str, str] = {}
+    metadata: Dict[str, str] = {}
+    for name, skill, source, target, mode in VENDORED_USER_SKILL_FILES:
+        data = read_regular(source, required=True, limit=MAX_REPO_BYTES)
+        assert data is not None
+        if file_mode(source) != mode:
+            fail("a vendored skill source has an unsafe executable mode")
+        try:
+            text = data.decode("utf-8")
+        except UnicodeDecodeError:
+            fail("a vendored skill source is not valid UTF-8")
+        if target.endswith("SKILL.md"):
+            instructions[skill] = text
+        elif target.endswith("openai.yaml"):
+            metadata[skill] = text
+        elif target.endswith(".py"):
+            try:
+                compile(text, str(source), "exec")
+            except SyntaxError:
+                fail("a vendored skill script is invalid")
+        else:
+            fail("a vendored skill source declaration is invalid")
+        sources[name] = data
+    for skill in {item[1] for item in VENDORED_USER_SKILL_FILES}:
+        instruction = instructions.get(skill)
+        if instruction is None or not instruction.startswith("---\n"):
+            fail("a vendored skill instruction file is invalid")
+        end = instruction.find("\n---\n", 4)
+        if end < 4:
+            fail("a vendored skill instruction file is invalid")
+        frontmatter = instruction[4:end]
+        if not re.search(r"(?m)^name:\s*{}\s*$".format(re.escape(skill)), frontmatter):
+            fail("a vendored skill instruction file is invalid")
+        if not re.search(r"(?m)^description:\s*\S", frontmatter):
+            fail("a vendored skill instruction file is invalid")
+        interface = metadata.get(skill)
+        if interface is None or not re.search(r"(?m)^interface:\s*$", interface):
+            fail("a vendored skill metadata file is invalid")
+    return sources
 
 
 def parse_toml(data: bytes) -> Any:
@@ -312,18 +443,6 @@ def candidate_config(before: Optional[bytes]) -> bytes:
     return rendered
 
 
-def target_mode(path: Path, default: int) -> int:
-    if not lexists(path):
-        return default
-    try:
-        info = path.lstat()
-    except OSError:
-        fail("a managed file mode cannot be inspected")
-    if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
-        fail("a managed file has an unsafe filesystem type")
-    return stat.S_IMODE(info.st_mode)
-
-
 def state_root(home: Path) -> Path:
     return home / ".codex-policy"
 
@@ -394,12 +513,33 @@ def build_plan(home: Path) -> InstallPlan:
     assert policy_after is not None
     policy_target = home / "AGENTS.md"
     config_target = home / "config.toml"
+    policy_mode = file_mode(policy_target)
+    config_mode = file_mode(config_target)
     policy_before = read_regular(policy_target, required=False, limit=MAX_TARGET_BYTES)
     config_before = read_regular(config_target, required=False, limit=MAX_TARGET_BYTES)
     files = [
-        FilePlan("AGENTS.md", policy_before, policy_after, target_mode(policy_target, 0o644)),
-        FilePlan("config.toml", config_before, candidate_config(config_before), target_mode(config_target, 0o600)),
+        FilePlan("AGENTS.md", policy_before, policy_after, policy_mode, policy_mode if policy_mode is not None else 0o644),
+        FilePlan(
+            "config.toml",
+            config_before,
+            candidate_config(config_before),
+            config_mode,
+            config_mode if config_mode is not None else 0o600,
+        ),
     ]
+    vendored_sources = validate_vendored_sources()
+    for name, _, _, target_relative, mode in VENDORED_USER_SKILL_FILES:
+        target = home / target_relative
+        validate_skill_target_parents(home, target)
+        files.append(
+            FilePlan(
+                name,
+                read_regular(target, required=False, limit=MAX_TARGET_BYTES),
+                vendored_sources[name],
+                file_mode(target),
+                mode,
+            )
+        )
     return InstallPlan(
         files=files,
         override_present=lexists(home / "AGENTS.override.md"),
@@ -409,11 +549,18 @@ def build_plan(home: Path) -> InstallPlan:
 
 def plan_report(plan: InstallPlan) -> Dict[str, Any]:
     by_name = {item.name: item for item in plan.files}
+    vendored = [by_name[name] for name in VENDORED_FILE_NAMES]
+    vendored_status = (
+        "missing"
+        if all(item.before is None for item in vendored)
+        else ("current" if all(not item.changed for item in vendored) else "drifted")
+    )
     action = "blocked" if plan.blocked else ("update" if plan.changed else "none")
     return {
         "schema": SCHEMA,
         "global_policy": by_name["AGENTS.md"].status,
         "managed_config": by_name["config.toml"].status,
+        "vendored_user_skills": vendored_status,
         "override": "blocking" if plan.override_present else "absent",
         "transaction": "recovery_required" if plan.recovery_required else "clean",
         "action": action,
@@ -428,6 +575,7 @@ def print_report(title: str, report: Mapping[str, Any], json_mode: bool) -> None
     labels = {
         "global_policy": "global policy",
         "managed_config": "managed config",
+        "vendored_user_skills": "vendored user skills",
         "override": "override",
         "transaction": "transaction",
         "action": "action",
@@ -550,12 +698,56 @@ class Lock:
 
 
 def current_bytes(home: Path, name: str) -> Optional[bytes]:
-    return read_regular(home / name, required=False, limit=MAX_TARGET_BYTES)
+    return read_regular(managed_target_path(home, name), required=False, limit=MAX_TARGET_BYTES)
 
 
 def verify_snapshot(home: Path, item: FilePlan) -> None:
-    if current_bytes(home, item.name) != item.before:
+    target = managed_target_path(home, item.name)
+    if current_bytes(home, item.name) != item.before or file_mode(target) != item.before_mode:
         fail("a managed file changed concurrently; no update was made")
+
+
+def ensure_target_parent_directories(home: Path, item: FilePlan) -> List[Path]:
+    target = managed_target_path(home, item.name)
+    try:
+        relative = target.relative_to(home)
+    except ValueError:
+        fail("a managed skill target is outside the Codex home")
+    created: List[Path] = []
+    current = home
+    for part in relative.parts[:-1]:
+        current = current / part
+        if lexists(current):
+            try:
+                info = current.lstat()
+            except OSError:
+                fail("a managed skill directory cannot be inspected")
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                fail("a managed skill directory has an unsafe filesystem type")
+            continue
+        try:
+            current.mkdir(mode=0o755)
+            fsync_directory(current.parent)
+        except PolicyError:
+            raise
+        except OSError:
+            fail("a managed skill directory cannot be created")
+        created.append(current)
+    return created
+
+
+def remove_empty_directories(paths: Sequence[Path]) -> None:
+    for path in reversed(paths):
+        if not lexists(path):
+            continue
+        try:
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
+                continue
+            path.rmdir()
+            fsync_directory(path.parent)
+        except OSError:
+            continue
 
 
 def make_transaction(home: Path, plan: InstallPlan) -> Tuple[Path, Dict[str, Any]]:
@@ -596,7 +788,8 @@ def make_transaction(home: Path, plan: InstallPlan) -> Tuple[Path, Dict[str, Any
             "before_present": item.before is not None,
             "before_sha256": sha256(item.before),
             "after_sha256": sha256(item.after),
-            "mode": item.mode,
+            "before_mode": item.before_mode,
+            "after_mode": item.mode,
         }
         if item.before is not None:
             atomic_write(directory / (item.name + ".before"), item.before, 0o600)
@@ -612,20 +805,23 @@ def make_transaction(home: Path, plan: InstallPlan) -> Tuple[Path, Dict[str, Any
 
 
 def restore_before(home: Path, directory: Path, name: str, record: Mapping[str, Any]) -> None:
-    target = home / name
+    target = managed_target_path(home, name)
     if record.get("before_present"):
         backup = read_regular(directory / (name + ".before"), required=True, limit=MAX_TARGET_BYTES)
         assert backup is not None
         if sha256(backup) != record.get("before_sha256"):
             fail("a private transaction backup failed integrity verification")
-        atomic_write(target, backup, int(record["mode"]))
+        mode = record.get("before_mode", record.get("mode"))
+        if not isinstance(mode, int):
+            fail("a local policy transaction journal is invalid")
+        atomic_write(target, backup, mode)
     elif lexists(target):
         try:
             info = target.lstat()
             if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
                 fail("a managed file has an unsafe filesystem type")
             target.unlink()
-            fsync_directory(home)
+            fsync_directory(target.parent)
         except PolicyError:
             raise
         except OSError:
@@ -644,6 +840,7 @@ def apply_plan(home: Path) -> str:
             return "none"
         directory, journal = make_transaction(home, plan)
         replaced: List[str] = []
+        created_directories: List[Path] = []
         try:
             journal["state"] = "applying"
             write_journal(directory, journal)
@@ -651,15 +848,17 @@ def apply_plan(home: Path) -> str:
                 if not item.changed:
                     continue
                 verify_snapshot(home, item)
+                created_directories.extend(ensure_target_parent_directories(home, item))
+                verify_snapshot(home, item)
                 replaced.append(item.name)
-                atomic_write(home / item.name, item.after, item.mode)
+                atomic_write(managed_target_path(home, item.name), item.after, item.mode)
                 journal["replaced"] = list(replaced)
                 write_journal(directory, journal)
                 fail_after = os.environ.get("CODEX_POLICY_TEST_FAIL_AFTER")
                 if fail_after and len(replaced) >= int(fail_after):
                     raise RuntimeError("injected failure")
             for item in plan.files:
-                if current_bytes(home, item.name) != item.after:
+                if current_bytes(home, item.name) != item.after or file_mode(managed_target_path(home, item.name)) != item.mode:
                     fail("post-install verification failed")
             if lexists(home / "AGENTS.override.md"):
                 fail("post-install verification failed")
@@ -673,6 +872,7 @@ def apply_plan(home: Path) -> str:
                     restore_before(home, directory, name, journal["files"][name])
                 except Exception:
                     rollback_failed = True
+            remove_empty_directories(created_directories)
             journal["state"] = "recovery_required" if rollback_failed else "rolled_back"
             try:
                 write_journal(directory, journal)
@@ -694,7 +894,14 @@ def validate_journal_files(value: Mapping[str, Any]) -> Dict[str, Mapping[str, A
     for name, record in files.items():
         if not isinstance(record, dict):
             fail("a local policy transaction journal is invalid")
-        if not isinstance(record.get("mode"), int):
+        before_present = record.get("before_present")
+        if not isinstance(before_present, bool):
+            fail("a local policy transaction journal is invalid")
+        before_mode = record.get("before_mode", record.get("mode") if before_present else None)
+        after_mode = record.get("after_mode", record.get("mode"))
+        if (before_present and not isinstance(before_mode, int)) or (not before_present and before_mode is not None):
+            fail("a local policy transaction journal is invalid")
+        if not isinstance(after_mode, int):
             fail("a local policy transaction journal is invalid")
         result[name] = record
     return result
@@ -716,10 +923,17 @@ def recover_pending(home: Path, apply: bool) -> str:
                 digest = sha256(current)
                 before_digest = record.get("before_sha256")
                 after_digest = record.get("after_sha256")
-                if digest not in {before_digest, after_digest}:
+                before_mode = record.get("before_mode", record.get("mode") if record.get("before_present") else None)
+                after_mode = record.get("after_mode", record.get("mode"))
+                current_mode = file_mode(managed_target_path(home, name))
+                matches_before = digest == before_digest and current_mode == before_mode
+                matches_after = digest == after_digest and current_mode == after_mode
+                if not matches_before and not matches_after:
                     fail("recovery stopped because a managed file changed independently")
             for name, record in files.items():
-                if sha256(current_bytes(home, name)) == record.get("after_sha256"):
+                current = current_bytes(home, name)
+                after_mode = record.get("after_mode", record.get("mode"))
+                if sha256(current) == record.get("after_sha256") and file_mode(managed_target_path(home, name)) == after_mode:
                     restore_before(home, directory, name, record)
             journal["state"] = "recovered"
             write_journal(directory, journal)
@@ -1027,7 +1241,10 @@ def command_audit_repo(args: argparse.Namespace) -> int:
 
 
 def parser() -> argparse.ArgumentParser:
-    root = argparse.ArgumentParser(prog="codex-policy", description="Safely diagnose and update portable global Codex policy")
+    root = argparse.ArgumentParser(
+        prog="codex-policy",
+        description="Safely diagnose and update portable global Codex policy and reviewed user skills",
+    )
     commands = root.add_subparsers(dest="command")
     plan = commands.add_parser("plan", help="show a read-only update plan")
     plan.add_argument("--json", action="store_true")
@@ -1036,7 +1253,7 @@ def parser() -> argparse.ArgumentParser:
     doctor = commands.add_parser("doctor", help="run sanitized policy and Codex diagnostics")
     doctor.add_argument("--json", action="store_true")
     doctor.set_defaults(handler=command_doctor)
-    apply = commands.add_parser("apply", help="transactionally install the managed policy")
+    apply = commands.add_parser("apply", help="transactionally install the managed policy and reviewed user skills")
     apply.add_argument("--yes", action="store_true", help="confirm the write")
     apply.set_defaults(handler=command_apply)
     verify = commands.add_parser("verify", help="verify that managed policy is current")
@@ -1055,7 +1272,7 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
     if sys.version_info < (3, 9):
         fail("Python 3.9 or newer is required")
     if fcntl is None:
-        fail("macOS or Linux is required")
+        fail("macOS or Linux is required; Windows deployment needs host-local agent review")
     arguments = parser().parse_args(argv)
     if arguments.command is None:
         arguments = parser().parse_args(["plan"])
