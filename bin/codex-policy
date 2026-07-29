@@ -153,9 +153,9 @@ EXPECTED_FILES = {
 REVIEWED_ARTIFACT_HASHES = {
     "global/AGENTS.md": "fbca3e24c52fd75c18531b9e236861d9a645b8771f68f785eb54aa847506c0d4",
     "global/official-skills.json": "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
-    "global/skills/oracle-solver/SKILL.md": "a7c70ab4b4d71fbd8756a425cfcc4ecd3f0999d8dd06e58a527a2cb346ba82ae",
-    "global/skills/oracle-solver/agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
-    "global/skills/oracle-solver/scripts/run_oracle.py": "fe09de634e89298d461063fa680893593447356c9813715040a201b0e88c8285",
+    "global/skills/oracle-solver/SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
+    "global/skills/oracle-solver/agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
+    "global/skills/oracle-solver/scripts/run_oracle.py": "0b852d562eb2dbf73e773599033caa630cc1968011d73781dbe4c71074a06371",
     "global/skills/loop-init/SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
     "global/skills/loop-init/agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
     "global/skills/loop-init/scripts/init_loop.py": "3bd80bcd2f84dd6b4d0bebf77dbe39b992f81f2a4b25be00bc485cc28dd2acea",

@@ -1,4 +1,4 @@
 interface:
   display_name: "Oracle Solver"
   short_description: "Independent judgment for difficult decisions"
-  default_prompt: "Use $oracle-solver for a bounded independent judgment under the current evidence and constraints, then return the managed review path before continuing."
+  default_prompt: "Use $oracle-solver for a bounded independent judgment under the current evidence and constraints. Review the disposable current-state workspace, consume the validated ephemeral report by default, and return the report handoff before continuing; request a managed path only when durable output is explicitly needed."

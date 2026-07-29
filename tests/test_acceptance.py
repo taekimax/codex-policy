@@ -973,9 +973,10 @@ raise SystemExit(2)
         contract = namespace["sanitized_contract"](command, document)
         self.assertEqual(contract["schema_version"], "oracle-runner-contract-v3")
         self.assertEqual(contract["response_schema"], "oracle-review-v2")
-        self.assertEqual(contract["handoff_schema"], "oracle-review-handoff-v2")
-        self.assertEqual(contract["document_publication"], "atomic-and-digest-verified")
+        self.assertEqual(contract["handoff_schema"], "oracle-review-handoff-v3")
+        self.assertEqual(contract["document_publication"], "optional-atomic-and-digest-verified")
         self.assertEqual(contract["timeout"], "81 minutes")
+        self.assertEqual(contract["target_workspace_write_scope"], "none-by-default")
         self.assertEqual(namespace["ORACLE_TIMEOUT_SECONDS"], 81 * 60)
         timed_out_process = mock.Mock(pid=123)
         timed_out_process.communicate.side_effect = subprocess.TimeoutExpired(
@@ -1020,7 +1021,7 @@ raise SystemExit(2)
             [mock.call(timeout=2), mock.call()],
         )
         skill_text = (ORACLE_SKILL / "SKILL.md").read_text(encoding="utf-8")
-        self.assertNotIn("read-only", skill_text.lower())
+        self.assertIn("disposable current-state worktree", skill_text)
         self.assertIn("runner sets timeout at 81 minutes", skill_text)
         self.assertIn("1, 2, 4, 8, 16, 20, 30 minutes", skill_text)
         self.assertIn("Invoke Oracle when the user explicitly requests it", skill_text)
@@ -1034,6 +1035,7 @@ raise SystemExit(2)
         self.assertIn("independently verifiable slices", skill_text)
         self.assertIn("bounded task packets", skill_text)
         self.assertIn("document_sha256", skill_text)
+        self.assertIn("report_markdown", skill_text)
         self.assertEqual(namespace["delete_document"](document), document)
         self.assertFalse(document.exists())
 
@@ -1062,7 +1064,7 @@ raise SystemExit(2)
             captured["scratch"] = scratch_workspace
             self.assertNotEqual(scratch_workspace, target)
             self.assertEqual(environment["TMPDIR"], str(scratch_workspace))
-            self.assertIn(str(target), prompt)
+            self.assertNotIn(str(target), prompt)
             (scratch_workspace / "intermediate.txt").write_text("scratch", encoding="utf-8")
             output = Path(command[command.index("--output-last-message") + 1])
             output.write_text(json.dumps(response), encoding="utf-8")
@@ -1094,6 +1096,120 @@ raise SystemExit(2)
         emitted_handoff = json.loads(stdout.getvalue())
         self.assertEqual(emitted_handoff["document_path"], str(managed_document.resolve()))
         self.assertEqual(emitted_handoff["document_sha256"], digest(managed_document.read_bytes()))
+        self.assertFalse(captured["scratch"].exists())
+
+    def test_disposable_review_workspace_mirrors_dirty_git_state_and_cleans(self) -> None:
+        namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
+        target = self.scratch / "git-target"
+        target.mkdir()
+        subprocess.run(["git", "init", "-q"], cwd=str(target), check=True)
+        subprocess.run(
+            ["git", "config", "user.email", "fixture"],
+            cwd=str(target),
+            check=True,
+        )
+        subprocess.run(
+            ["git", "config", "user.name", "Fixture"],
+            cwd=str(target),
+            check=True,
+        )
+        (target / "tracked.txt").write_text("committed\n", encoding="utf-8")
+        subprocess.run(["git", "add", "tracked.txt"], cwd=str(target), check=True)
+        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=str(target), check=True)
+        (target / "tracked.txt").write_text("dirty\n", encoding="utf-8")
+        (target / "untracked.txt").write_text("untracked\n", encoding="utf-8")
+
+        review_path = None
+        with namespace["DisposableReviewWorkspace"](target) as review:
+            review_path = review
+            self.assertNotEqual(review, target)
+            self.assertEqual((review / "tracked.txt").read_text(encoding="utf-8"), "dirty\n")
+            self.assertEqual((review / "untracked.txt").read_text(encoding="utf-8"), "untracked\n")
+            self.assertTrue((review / ".git").exists())
+            (review / "oracle-mutation.txt").write_text("temporary\n", encoding="utf-8")
+
+        self.assertIsNotNone(review_path)
+        self.assertFalse(review_path.exists())
+        self.assertEqual((target / "tracked.txt").read_text(encoding="utf-8"), "dirty\n")
+        self.assertEqual((target / "untracked.txt").read_text(encoding="utf-8"), "untracked\n")
+        worktrees = subprocess.run(
+            ["git", "worktree", "list", "--porcelain"],
+            cwd=str(target),
+            check=True,
+            text=True,
+            stdout=subprocess.PIPE,
+        ).stdout
+        self.assertNotIn(str(review_path), worktrees)
+
+    def test_default_oracle_handoff_is_ephemeral_and_leaves_target_unchanged(self) -> None:
+        namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
+        target = self.scratch / "ephemeral-target"
+        target.mkdir()
+        request = target / "request.json"
+        request.write_text(
+            json.dumps(
+                {
+                    "objective": "Review the fixture.",
+                    "context": "Fixture context.",
+                    "questions": ["Is it sound?"],
+                    "constraints": [],
+                    "prior_attempts": [],
+                    "evidence": [],
+                    "excluded_actions": [],
+                    "requested_deliverable": "A verdict.",
+                }
+            ),
+            encoding="utf-8",
+        )
+        response = {
+            "schema_version": "oracle-review-v2",
+            "status": "complete",
+            "verdict": "proceed",
+            "confidence": "high",
+            "answer": "A concise answer.",
+            "question_answers": [
+                {"question_index": 1, "answer": "Yes, it is sound.", "finding_ids": []}
+            ],
+            "scope": {"reviewed": ["fixture"], "not_reviewed": []},
+            "findings": [],
+            "risks": [],
+            "recommended_next_steps": [],
+            "assumptions": [],
+            "unknowns": [],
+        }
+        captured: Dict[str, Path] = {}
+
+        def fake_run(command, prompt, scratch_workspace, environment):
+            captured["scratch"] = scratch_workspace
+            output = Path(command[command.index("--output-last-message") + 1])
+            output.write_text(json.dumps(response), encoding="utf-8")
+            return ""
+
+        with mock.patch.dict(
+            namespace["main"].__globals__,
+            {
+                "resolve_codex": lambda environment: "codex",
+                "verify_model_contract": lambda executable, environment: None,
+                "run_codex": fake_run,
+            },
+        ):
+            stdout = io.StringIO()
+            with redirect_stdout(stdout):
+                result = namespace["main"](
+                    [
+                        "--workspace",
+                        str(target),
+                        "--request-file",
+                        str(request),
+                    ]
+                )
+
+        self.assertEqual(result, 0)
+        emitted_handoff = json.loads(stdout.getvalue())
+        self.assertEqual(emitted_handoff["schema_version"], "oracle-review-handoff-v3")
+        self.assertIsNone(emitted_handoff["document_path"])
+        self.assertIn("# Oracle Review", emitted_handoff["report_markdown"])
+        self.assertEqual({path.name for path in target.iterdir()}, {"request.json"})
         self.assertFalse(captured["scratch"].exists())
 
     def test_official_skills_partial_failure_restores_exact_config_and_plugin_state(self) -> None:
@@ -1374,9 +1490,9 @@ raise SystemExit(2)
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
             {
-                "SKILL.md": "a7c70ab4b4d71fbd8756a425cfcc4ecd3f0999d8dd06e58a527a2cb346ba82ae",
-                "agents/openai.yaml": "9307f393c355c0e8da784e68bd6538c59ba9256edd9d7c6e8d98471171248481",
-                "scripts/run_oracle.py": "fe09de634e89298d461063fa680893593447356c9813715040a201b0e88c8285",
+                "SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
+                "agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
+                "scripts/run_oracle.py": "0b852d562eb2dbf73e773599033caa630cc1968011d73781dbe4c71074a06371",
             },
         )
         self.assertEqual(
