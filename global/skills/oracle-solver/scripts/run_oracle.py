@@ -4,7 +4,10 @@
 from __future__ import annotations
 
 import argparse
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
 import hashlib
 import json
 import os
@@ -595,7 +598,10 @@ def run_codex(
 
 def terminate_process(process: subprocess.Popen[str]) -> None:
     try:
-        os.killpg(process.pid, signal.SIGTERM)
+        if os.name == "nt":
+            process.terminate()
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
     except OSError:
         try:
             process.terminate()
@@ -607,7 +613,10 @@ def terminate_process(process: subprocess.Popen[str]) -> None:
     except subprocess.TimeoutExpired:
         pass
     try:
-        os.killpg(process.pid, signal.SIGKILL)
+        if os.name == "nt":
+            process.kill()
+        else:
+            os.killpg(process.pid, signal.SIGKILL)
     except OSError:
         try:
             process.kill()
@@ -845,10 +854,84 @@ def owned_destination_fingerprint(parent_fd: int, name: str) -> tuple[int, int, 
         raise OracleError("the response document cannot be read safely") from exc
 
 
+def owned_destination_fingerprint_path(path: Path) -> tuple[int, int, int, int] | None:
+    if not os.path.lexists(path):
+        return None
+    try:
+        info = path.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode) or info.st_size > MAX_DOCUMENT_BYTES:
+            raise OracleError("the response document has an unsafe filesystem type or size")
+        with path.open(encoding="utf-8") as handle:
+            first_line = handle.readline().rstrip("\r\n")
+        if first_line != DOCUMENT_MARKER:
+            raise OracleError("refusing to replace a document not owned by oracle-solver")
+        return (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns)
+    except UnicodeError as exc:
+        raise OracleError("the response document cannot be read safely") from exc
+    except OSError as exc:
+        raise OracleError("the response document cannot be inspected safely") from exc
+
+
+def write_document_windows(path: Path, data: bytes) -> str:
+    try:
+        import msvcrt
+    except ImportError as exc:
+        raise OracleError("Windows document publication is unavailable") from exc
+    lock_path = path.parent / ("." + path.name + ".oracle.lock")
+    if os.path.lexists(lock_path):
+        info = lock_path.lstat()
+        if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
+            raise OracleError("the response document lock has an unsafe filesystem type")
+    lock_fd = os.open(str(lock_path), os.O_RDWR | os.O_CREAT, 0o600)
+    temporary: str | None = None
+    try:
+        os.lseek(lock_fd, 0, os.SEEK_SET)
+        try:
+            msvcrt.locking(lock_fd, msvcrt.LK_NBLCK, 1)
+        except PermissionError as exc:
+            raise OracleError("another Oracle document publication is in progress") from exc
+        before = owned_destination_fingerprint_path(path)
+        descriptor, temporary = tempfile.mkstemp(prefix="." + path.name + ".oracle-", dir=str(path.parent))
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if owned_destination_fingerprint_path(path) != before:
+            raise OracleError("the response document changed during publication")
+        os.replace(temporary, str(path))
+        temporary = None
+        published = path.read_bytes()
+        if published != data:
+            raise OracleError("the published response document failed verification")
+        return hashlib.sha256(published).hexdigest()
+    except OracleError:
+        raise
+    except OSError as exc:
+        raise OracleError("the managed response document could not be written") from exc
+    finally:
+        if temporary is not None:
+            try:
+                os.unlink(temporary)
+            except OSError:
+                pass
+        try:
+            os.lseek(lock_fd, 0, os.SEEK_SET)
+            msvcrt.locking(lock_fd, msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        os.close(lock_fd)
+        try:
+            os.unlink(lock_path)
+        except OSError:
+            pass
+
+
 def write_document(path: Path, payload: str) -> str:
     data = payload.encode("utf-8")
     if len(data) > MAX_DOCUMENT_BYTES:
         raise OracleError("the rendered response document exceeds the size limit")
+    if os.name == "nt":
+        return write_document_windows(path, data)
     directory_flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
     staging_name: str | None = None
     try:

@@ -7,7 +7,14 @@ import hashlib
 import io
 import json
 import os
-import fcntl
+try:
+    import fcntl
+except ImportError:
+    fcntl = None
+try:
+    import msvcrt
+except ImportError:
+    msvcrt = None
 import runpy
 import shutil
 import stat
@@ -49,13 +56,24 @@ def digest(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def toml_path(path: Path) -> str:
+    return path.as_posix() if os.name == "nt" else str(path)
+
+
 class CodexPolicyAcceptance(unittest.TestCase):
     def setUp(self) -> None:
         self.scratch = Path(tempfile.mkdtemp(prefix="codex-policy-test-"))
         self.home = self.scratch / "codex-home"
 
     def tearDown(self) -> None:
-        shutil.rmtree(self.scratch)
+        def onerror(function, path, _exc_info):
+            if os.name == "nt":
+                os.chmod(path, stat.S_IWRITE)
+                function(path)
+            else:
+                raise
+
+        shutil.rmtree(self.scratch, onerror=onerror)
 
     def run_policy(
         self,
@@ -83,6 +101,10 @@ class CodexPolicyAcceptance(unittest.TestCase):
         self.assertNotIn(str(self.scratch), combined)
         self.assertNotIn(str(self.home), combined)
 
+    def assert_mode(self, path: Path, expected: int) -> None:
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(path.stat().st_mode), expected)
+
     def transaction_directories(self) -> Sequence[Path]:
         root = self.home / ".codex-policy" / "transactions"
         return sorted(root.iterdir()) if root.exists() else []
@@ -92,7 +114,7 @@ class CodexPolicyAcceptance(unittest.TestCase):
         fake_bin.mkdir()
         state = self.scratch / "plugin-state.json"
         state.write_text(json.dumps({"installed": list(installed)}), encoding="utf-8")
-        executable = fake_bin / "codex"
+        executable = fake_bin / ("codex_fixture.py" if os.name == "nt" else "codex")
         executable.write_text(
             """#!/usr/bin/env python3
 import json
@@ -142,7 +164,11 @@ raise SystemExit(2)
 """,
             encoding="utf-8",
         )
-        executable.chmod(0o755)
+        if os.name == "nt":
+            launcher = fake_bin / "codex.cmd"
+            launcher.write_text('@python "%~dp0codex_fixture.py" %*\n', encoding="utf-8")
+        else:
+            executable.chmod(0o755)
         sources = self.scratch / "plugin-sources"
         sources.mkdir()
         return {
@@ -265,13 +291,14 @@ raise SystemExit(2)
                 source = source_root / relative
                 destination = self.home / "skills" / destination_name / relative
                 self.assertEqual(destination.read_bytes(), source.read_bytes())
-                self.assertEqual(stat.S_IMODE(destination.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
+                if os.name != "nt":
+                    self.assertEqual(stat.S_IMODE(destination.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
         config = (self.home / "config.toml").read_text(encoding="utf-8")
         self.assertIn("max_threads = 6", config)
         self.assertIn("max_depth = 1", config)
         self.assertIn("job_max_runtime_seconds = 1800", config)
-        self.assertEqual(stat.S_IMODE((self.home / "config.toml").stat().st_mode), 0o600)
-        self.assertEqual(stat.S_IMODE((self.home / "AGENTS.md").stat().st_mode), 0o644)
+        self.assert_mode(self.home / "config.toml", 0o600)
+        self.assert_mode(self.home / "AGENTS.md", 0o644)
         verify = self.run_policy("verify", "--json")
         self.assertEqual(verify.returncode, 0, verify.stderr)
         self.assertEqual(json.loads(verify.stdout)["verified"], "passed")
@@ -430,7 +457,8 @@ raise SystemExit(2)
         self.assertEqual(repaired.returncode, 0, repaired.stderr)
         source = LOOP_INIT_SKILL / "scripts" / "init_loop.py"
         self.assertEqual(target.read_bytes(), source.read_bytes())
-        self.assertEqual(stat.S_IMODE(target.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
+        if os.name != "nt":
+            self.assertEqual(stat.S_IMODE(target.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
 
     @unittest.skipIf(os.name == "nt", "symlink behavior differs on Windows")
     def test_symlinked_vendored_skill_directory_is_rejected(self) -> None:
@@ -482,7 +510,11 @@ raise SystemExit(2)
         self.home.mkdir(mode=0o700)
         lock_path = self.home / ".codex-policy.lock"
         with lock_path.open("w", encoding="utf-8") as handle:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if os.name == "nt":
+                handle.seek(0)
+                msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
             result = self.run_policy("apply", "--yes")
             self.assertEqual(result.returncode, 2)
             self.assertIn("holds the update lock", result.stderr)
@@ -544,7 +576,10 @@ raise SystemExit(2)
             '\n'
             '[[skills.config]]\n'
             'path = "{}"\n'
-            'enabled = true\n'.format(unrelated, stale),
+            'enabled = true\n'.format(
+                unrelated.as_posix() if os.name == "nt" else unrelated,
+                stale.as_posix() if os.name == "nt" else stale,
+            ),
             encoding="utf-8",
         )
 
@@ -559,7 +594,7 @@ raise SystemExit(2)
         self.assertIn("result: updated", applied.stdout)
         config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
         self.assertIn('model    = "keep-me" # preserve formatting', config)
-        self.assertIn(str(unrelated), config)
+        self.assertIn(unrelated.as_posix() if os.name == "nt" else str(unrelated), config)
         self.assertEqual(config.count("enabled = false"), 19)
         state = json.loads(Path(environment["CODEX_FAKE_STATE"]).read_text(encoding="utf-8"))
         plugin_ids = {item["pluginId"] for item in state["installed"]}
@@ -596,15 +631,17 @@ raise SystemExit(2)
         original = (
             'model = "preserved"\n\n'
             '[[skills.config]]\npath = "{}"\nenabled = false\n\n'
-            '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(user_tombstone, connector_tombstone)
+            '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(
+                toml_path(user_tombstone), toml_path(connector_tombstone)
+            )
         ).encode("utf-8")
         self.home.joinpath("config.toml").write_bytes(original)
 
         applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
         self.assertEqual(applied.returncode, 0, applied.stderr)
         updated = self.home.joinpath("config.toml").read_text(encoding="utf-8")
-        self.assertIn(str(user_tombstone), updated)
-        self.assertIn(str(connector_tombstone), updated)
+        self.assertIn(toml_path(user_tombstone), updated)
+        self.assertIn(toml_path(connector_tombstone), updated)
         self.assertEqual(updated.count("enabled = false"), 5)
         verified = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(verified.returncode, 0, verified.stderr)
@@ -622,7 +659,7 @@ raise SystemExit(2)
         self.assertEqual(applied.returncode, 0, applied.stderr)
         config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
         for path in paths:
-            self.assertIn(str(path), config)
+            self.assertIn(toml_path(path), config)
         self.assertEqual(config.count("enabled = false"), 6)
 
         for path in paths:
@@ -665,7 +702,7 @@ raise SystemExit(2)
             shared_skills / "web-design-guidelines" / "SKILL.md",
         ]
         original = "".join(
-            '[[skills.config]]\npath = "{}"\nenabled = false\n\n'.format(path)
+            '[[skills.config]]\npath = "{}"\nenabled = false\n\n'.format(toml_path(path))
             for path in configured
         ).encode("utf-8")
         self.home.joinpath("config.toml").write_bytes(original)
@@ -692,7 +729,7 @@ raise SystemExit(2)
         self.write_required_plugin_skills(sources)
         self.write_system_skills()
         tombstone = self.home / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "old" / "skills" / "documents" / "SKILL.md"
-        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(tombstone).encode("utf-8")
+        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(toml_path(tombstone)).encode("utf-8")
         self.home.joinpath("config.toml").write_bytes(original)
 
         plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
@@ -707,7 +744,7 @@ raise SystemExit(2)
         missing = Path(environment["CODEX_FAKE_SOURCES"]) / "documents" / "skills" / "documents" / "SKILL.md"
         missing.unlink()
         tombstone = self.home / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "old" / "skills" / "documents" / "SKILL.md"
-        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(tombstone).encode("utf-8")
+        original = '[[skills.config]]\npath = "{}"\nenabled = false\n'.format(toml_path(tombstone)).encode("utf-8")
         self.home.joinpath("config.toml").write_bytes(original)
         plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(plan.returncode, 0, plan.stderr)
@@ -725,7 +762,7 @@ raise SystemExit(2)
     def test_official_skills_blocks_unresolved_enabled_user_tombstone(self) -> None:
         environment = self.make_current_skills_environment()
         tombstone = Path(environment["HOME"]) / ".agents" / "skills" / "find-skills" / "SKILL.md"
-        original = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(tombstone).encode("utf-8")
+        original = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(toml_path(tombstone)).encode("utf-8")
         self.home.joinpath("config.toml").write_bytes(original)
         verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(verify.returncode, 1, verify.stderr)
@@ -740,7 +777,7 @@ raise SystemExit(2)
             self.home / "plugins" / "cache" / "openai-curated-remote" / "gmail" / "old"
             / "skills" / "gmail" / "SKILL.md"
         )
-        original = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(tombstone).encode("utf-8")
+        original = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(toml_path(tombstone)).encode("utf-8")
         self.home.joinpath("config.toml").write_bytes(original)
         verify = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(verify.returncode, 1, verify.stderr)
@@ -775,7 +812,7 @@ raise SystemExit(2)
     def test_official_skills_preserves_unrelated_cache_like_path(self) -> None:
         environment = self.make_current_skills_environment()
         unrelated = Path("/tmp") / "unrelated-policy-fixture" / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "v1" / "skills" / "documents" / "SKILL.md"
-        original_entry = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(unrelated)
+        original_entry = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(toml_path(unrelated))
         self.home.joinpath("config.toml").write_text(original_entry, encoding="utf-8")
         applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
         self.assertEqual(applied.returncode, 0, applied.stderr)
@@ -996,26 +1033,38 @@ raise SystemExit(2)
 
         graceful_process = mock.Mock(pid=456)
         graceful_process.communicate.return_value = ("", "")
-        with mock.patch.object(namespace["os"], "killpg") as killpg:
+        if os.name == "nt":
             namespace["terminate_process"](graceful_process)
-        killpg.assert_called_once_with(graceful_process.pid, namespace["signal"].SIGTERM)
+            graceful_process.terminate.assert_called_once_with()
+        else:
+            with mock.patch.object(namespace["os"], "killpg") as killpg:
+                namespace["terminate_process"](graceful_process)
+            killpg.assert_called_once_with(graceful_process.pid, namespace["signal"].SIGTERM)
         graceful_process.communicate.assert_called_once_with(timeout=2)
-        graceful_process.kill.assert_not_called()
+        if os.name == "nt":
+            graceful_process.kill.assert_not_called()
+        else:
+            graceful_process.kill.assert_not_called()
 
         retained_pipe_process = mock.Mock(pid=789)
         retained_pipe_process.communicate.side_effect = [
             subprocess.TimeoutExpired(command, 2),
             ("", ""),
         ]
-        with mock.patch.object(namespace["os"], "killpg") as killpg:
+        if os.name == "nt":
             namespace["terminate_process"](retained_pipe_process)
-        self.assertEqual(
-            killpg.call_args_list,
-            [
-                mock.call(retained_pipe_process.pid, namespace["signal"].SIGTERM),
-                mock.call(retained_pipe_process.pid, namespace["signal"].SIGKILL),
-            ],
-        )
+            retained_pipe_process.terminate.assert_called_once_with()
+            retained_pipe_process.kill.assert_called_once_with()
+        else:
+            with mock.patch.object(namespace["os"], "killpg") as killpg:
+                namespace["terminate_process"](retained_pipe_process)
+            self.assertEqual(
+                killpg.call_args_list,
+                [
+                    mock.call(retained_pipe_process.pid, namespace["signal"].SIGTERM),
+                    mock.call(retained_pipe_process.pid, namespace["signal"].SIGKILL),
+                ],
+            )
         self.assertEqual(
             retained_pipe_process.communicate.call_args_list,
             [mock.call(timeout=2), mock.call()],
@@ -1492,7 +1541,7 @@ raise SystemExit(2)
             {
                 "SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
                 "agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
-                "scripts/run_oracle.py": "0b852d562eb2dbf73e773599033caa630cc1968011d73781dbe4c71074a06371",
+                "scripts/run_oracle.py": "fd4bcbe9130f7966bd37d88c8ef1c6470ad58bbc0c7423a14b60dea8b22db1d7",
             },
         )
         self.assertEqual(
@@ -1500,7 +1549,7 @@ raise SystemExit(2)
             {
                 "SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
                 "agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
-                "scripts/init_loop.py": "3bd80bcd2f84dd6b4d0bebf77dbe39b992f81f2a4b25be00bc485cc28dd2acea",
+                "scripts/init_loop.py": "01db0e4ed1c3273cb4d65d0e387ca25d218a57bad75e04c9d838ced7beb72e94",
             },
         )
         loop_text = (LOOP_INIT_SKILL / "SKILL.md").read_text(encoding="utf-8")

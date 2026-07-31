@@ -25,6 +25,11 @@ try:
 except ImportError:
     fcntl = None  # type: ignore
 
+try:
+    import msvcrt  # type: ignore
+except ImportError:
+    msvcrt = None  # type: ignore
+
 
 sys.dont_write_bytecode = True
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -155,10 +160,10 @@ REVIEWED_ARTIFACT_HASHES = {
     "global/official-skills.json": "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
     "global/skills/oracle-solver/SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
     "global/skills/oracle-solver/agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
-    "global/skills/oracle-solver/scripts/run_oracle.py": "0b852d562eb2dbf73e773599033caa630cc1968011d73781dbe4c71074a06371",
+    "global/skills/oracle-solver/scripts/run_oracle.py": "fd4bcbe9130f7966bd37d88c8ef1c6470ad58bbc0c7423a14b60dea8b22db1d7",
     "global/skills/loop-init/SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
     "global/skills/loop-init/agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
-    "global/skills/loop-init/scripts/init_loop.py": "3bd80bcd2f84dd6b4d0bebf77dbe39b992f81f2a4b25be00bc485cc28dd2acea",
+    "global/skills/loop-init/scripts/init_loop.py": "01db0e4ed1c3273cb4d65d0e387ca25d218a57bad75e04c9d838ced7beb72e94",
 }
 LOCAL_RUNTIME_DIRECTORIES = {".loop/backups"}
 
@@ -173,7 +178,7 @@ class FilePlan:
     before: Optional[bytes]
     after: bytes
     before_mode: Optional[int]
-    mode: int
+    mode: Optional[int]
 
     @property
     def changed(self) -> bool:
@@ -260,7 +265,15 @@ def file_mode(path: Path) -> Optional[int]:
         fail("a managed file mode cannot be inspected")
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
         fail("a managed file has an unsafe filesystem type")
+    # Windows does not expose POSIX permission bits through os.stat(). The
+    # Windows installer relies on the Codex home ACL and tracks content only.
+    if os.name == "nt":
+        return None
     return stat.S_IMODE(info.st_mode)
+
+
+def desired_mode(mode: int) -> Optional[int]:
+    return None if os.name == "nt" else mode
 
 
 def validate_skill_target_parents(home: Path, target: Path) -> None:
@@ -288,7 +301,7 @@ def validate_vendored_sources() -> Dict[str, bytes]:
     for name, skill, source, target, mode in VENDORED_USER_SKILL_FILES:
         data = read_regular(source, required=True, limit=MAX_REPO_BYTES)
         assert data is not None
-        if file_mode(source) != mode:
+        if os.name != "nt" and file_mode(source) != mode:
             fail("a vendored skill source has an unsafe executable mode")
         try:
             text = data.decode("utf-8")
@@ -518,13 +531,19 @@ def build_plan(home: Path) -> InstallPlan:
     policy_before = read_regular(policy_target, required=False, limit=MAX_TARGET_BYTES)
     config_before = read_regular(config_target, required=False, limit=MAX_TARGET_BYTES)
     files = [
-        FilePlan("AGENTS.md", policy_before, policy_after, policy_mode, policy_mode if policy_mode is not None else 0o644),
+        FilePlan(
+            "AGENTS.md",
+            policy_before,
+            policy_after,
+            policy_mode,
+            desired_mode(policy_mode if policy_mode is not None else 0o644),
+        ),
         FilePlan(
             "config.toml",
             config_before,
             candidate_config(config_before),
             config_mode,
-            config_mode if config_mode is not None else 0o600,
+            desired_mode(config_mode if config_mode is not None else 0o600),
         ),
     ]
     vendored_sources = validate_vendored_sources()
@@ -537,7 +556,7 @@ def build_plan(home: Path) -> InstallPlan:
                 read_regular(target, required=False, limit=MAX_TARGET_BYTES),
                 vendored_sources[name],
                 file_mode(target),
-                mode,
+                desired_mode(mode),
             )
         )
     return InstallPlan(
@@ -591,6 +610,10 @@ def print_report(title: str, report: Mapping[str, Any], json_mode: bool) -> None
 
 
 def fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        # Windows has no portable directory descriptor. os.replace() is
+        # atomic on the same volume, and the file itself is flushed below.
+        return
     flags = os.O_RDONLY
     if hasattr(os, "O_DIRECTORY"):
         flags |= os.O_DIRECTORY
@@ -606,12 +629,16 @@ def fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def atomic_write(path: Path, data: bytes, mode: int) -> None:
+def atomic_write(path: Path, data: bytes, mode: Optional[int]) -> None:
     descriptor = -1
     temporary: Optional[str] = None
     try:
         descriptor, temporary = tempfile.mkstemp(prefix=".codex-policy-", dir=str(path.parent))
-        os.fchmod(descriptor, mode)
+        if mode is not None:
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, mode)
+            else:
+                os.chmod(temporary, mode)
         with os.fdopen(descriptor, "wb") as handle:
             descriptor = -1
             handle.write(data)
@@ -660,25 +687,43 @@ class Lock:
         self.descriptor: Optional[int] = None
 
     def __enter__(self) -> "Lock":
-        if fcntl is None:
+        if fcntl is None and (os.name != "nt" or msvcrt is None):
             fail("this platform does not provide the required advisory lock")
         flags = os.O_RDWR | os.O_CREAT
         if hasattr(os, "O_NOFOLLOW"):
             flags |= os.O_NOFOLLOW
         descriptor: Optional[int] = None
         try:
+            if os.name == "nt" and lexists(self.path):
+                path_info = self.path.lstat()
+                if stat.S_ISLNK(path_info.st_mode) or not stat.S_ISREG(path_info.st_mode):
+                    fail("the policy update lock has an unsafe filesystem type")
             descriptor = os.open(str(self.path), flags, 0o600)
             info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.geteuid():
+            unsafe = not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            if fcntl is not None and os.name != "nt":
+                unsafe = unsafe or info.st_uid != os.geteuid()
+            if unsafe:
                 os.close(descriptor)
                 fail("the policy update lock has an unsafe filesystem type")
-            os.fchmod(descriptor, 0o600)
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, 0o600)
+            if os.name == "nt":
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.descriptor = descriptor
         except BlockingIOError:
             if descriptor is not None:
                 os.close(descriptor)
             fail("another policy operation holds the update lock")
+        except PermissionError:
+            if descriptor is not None:
+                os.close(descriptor)
+            if os.name == "nt":
+                fail("another policy operation holds the update lock")
+            fail("the policy update lock cannot be acquired")
         except PolicyError:
             raise
         except OSError:
@@ -690,7 +735,11 @@ class Lock:
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
         if self.descriptor is not None:
             try:
-                fcntl.flock(self.descriptor, fcntl.LOCK_UN)
+                if os.name == "nt":
+                    os.lseek(self.descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(self.descriptor, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(self.descriptor, fcntl.LOCK_UN)
             except OSError:
                 pass
             os.close(self.descriptor)
@@ -812,7 +861,9 @@ def restore_before(home: Path, directory: Path, name: str, record: Mapping[str, 
         if sha256(backup) != record.get("before_sha256"):
             fail("a private transaction backup failed integrity verification")
         mode = record.get("before_mode", record.get("mode"))
-        if not isinstance(mode, int):
+        if os.name == "nt":
+            mode = None
+        if not isinstance(mode, int) and not (os.name == "nt" and mode is None):
             fail("a local policy transaction journal is invalid")
         atomic_write(target, backup, mode)
     elif lexists(target):
@@ -899,9 +950,11 @@ def validate_journal_files(value: Mapping[str, Any]) -> Dict[str, Mapping[str, A
             fail("a local policy transaction journal is invalid")
         before_mode = record.get("before_mode", record.get("mode") if before_present else None)
         after_mode = record.get("after_mode", record.get("mode"))
-        if (before_present and not isinstance(before_mode, int)) or (not before_present and before_mode is not None):
+        if (before_present and not (isinstance(before_mode, int) or (os.name == "nt" and before_mode is None))) or (
+            not before_present and before_mode is not None
+        ):
             fail("a local policy transaction journal is invalid")
-        if not isinstance(after_mode, int):
+        if not isinstance(after_mode, int) and not (os.name == "nt" and after_mode is None):
             fail("a local policy transaction journal is invalid")
         result[name] = record
     return result
@@ -925,6 +978,9 @@ def recover_pending(home: Path, apply: bool) -> str:
                 after_digest = record.get("after_sha256")
                 before_mode = record.get("before_mode", record.get("mode") if record.get("before_present") else None)
                 after_mode = record.get("after_mode", record.get("mode"))
+                if os.name == "nt":
+                    before_mode = None
+                    after_mode = None
                 current_mode = file_mode(managed_target_path(home, name))
                 matches_before = digest == before_digest and current_mode == before_mode
                 matches_after = digest == after_digest and current_mode == after_mode
@@ -933,6 +989,8 @@ def recover_pending(home: Path, apply: bool) -> str:
             for name, record in files.items():
                 current = current_bytes(home, name)
                 after_mode = record.get("after_mode", record.get("mode"))
+                if os.name == "nt":
+                    after_mode = None
                 if sha256(current) == record.get("after_sha256") and file_mode(managed_target_path(home, name)) == after_mode:
                     restore_before(home, directory, name, record)
             journal["state"] = "recovered"
@@ -1054,7 +1112,7 @@ def audit_git_history() -> None:
             }
             else "100644"
         )
-        if mode != wanted_mode:
+        if os.name != "nt" and mode != wanted_mode:
             fail("repository audit found an unsafe Git file mode")
     head = subprocess.run(
         ["git", "rev-parse", "--verify", "HEAD"],
@@ -1122,17 +1180,18 @@ def audit_repository() -> None:
             fail("repository audit found an unsafe filesystem type")
         if info.st_size > MAX_REPO_BYTES:
             fail("repository audit found an oversized artifact")
-        executable = bool(stat.S_IMODE(info.st_mode) & 0o111)
-        if executable != (
-            relative
-            in {
-                "bin/codex-policy",
-                "bin/codex-skills-policy",
-                "global/skills/oracle-solver/scripts/run_oracle.py",
-                "global/skills/loop-init/scripts/init_loop.py",
-            }
-        ):
-            fail("repository audit found an unsafe executable mode")
+        if os.name != "nt":
+            executable = bool(stat.S_IMODE(info.st_mode) & 0o111)
+            if executable != (
+                relative
+                in {
+                    "bin/codex-policy",
+                    "bin/codex-skills-policy",
+                    "global/skills/oracle-solver/scripts/run_oracle.py",
+                    "global/skills/loop-init/scripts/init_loop.py",
+                }
+            ):
+                fail("repository audit found an unsafe executable mode")
         data = read_regular(path, required=True, limit=MAX_REPO_BYTES)
         assert data is not None
         scan_public_bytes(data)
@@ -1271,8 +1330,8 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: Optional[Sequence[str]] = None) -> int:
     if sys.version_info < (3, 9):
         fail("Python 3.9 or newer is required")
-    if fcntl is None:
-        fail("macOS or Linux is required; Windows deployment needs host-local agent review")
+    if fcntl is None and (os.name != "nt" or msvcrt is None):
+        fail("this platform does not provide the required advisory lock")
     arguments = parser().parse_args(argv)
     if arguments.command is None:
         arguments = parser().parse_args(["plan"])

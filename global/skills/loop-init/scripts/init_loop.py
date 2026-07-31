@@ -63,7 +63,7 @@ class Change:
     path: Path
     before: Optional[bytes]
     after: bytes
-    mode: int
+    mode: Optional[int]
     label: str
 
 
@@ -130,10 +130,10 @@ def safe_directory(root: Path, path: Path, *, required: bool = False) -> None:
         raise LoopInitError("a project directory has an unsafe filesystem type")
 
 
-def read_regular(root: Path, path: Path) -> Tuple[Optional[bytes], int]:
+def read_regular(root: Path, path: Path) -> Tuple[Optional[bytes], Optional[int]]:
     ensure_inside(root, path)
     if not lexical_exists(path):
-        return None, 0o644
+        return None, None if os.name == "nt" else 0o644
     try:
         info = path.lstat()
     except OSError as exc:
@@ -145,7 +145,7 @@ def read_regular(root: Path, path: Path) -> Tuple[Optional[bytes], int]:
         content.decode("utf-8")
     except (OSError, UnicodeError) as exc:
         raise LoopInitError("a project file must be readable UTF-8 text") from exc
-    return content, stat.S_IMODE(info.st_mode)
+    return content, None if os.name == "nt" else stat.S_IMODE(info.st_mode)
 
 
 def detect_root(start: Path) -> Tuple[Path, str]:
@@ -479,14 +479,15 @@ def print_inspection(root: Path, source: str) -> None:
     print("No files were changed.")
 
 
-def write_atomic(path: Path, content: bytes, mode: int) -> None:
+def write_atomic(path: Path, content: bytes, mode: Optional[int]) -> None:
     try:
         with tempfile.NamedTemporaryFile(dir=str(path.parent), prefix=".loop-init-", delete=False) as handle:
             temporary = Path(handle.name)
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.chmod(temporary, mode)
+        if mode is not None:
+            os.chmod(temporary, mode)
         os.replace(temporary, path)
     except OSError as exc:
         try:

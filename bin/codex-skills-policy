@@ -24,6 +24,11 @@ try:
 except ImportError:
     fcntl = None  # type: ignore
 
+try:
+    import msvcrt  # type: ignore
+except ImportError:
+    msvcrt = None  # type: ignore
+
 
 sys.dont_write_bytecode = True
 REPO_ROOT = Path(__file__).resolve().parent.parent
@@ -108,7 +113,7 @@ class PluginRecord:
 class SkillsPlan:
     before_config: Optional[bytes]
     after_config: Optional[bytes]
-    config_mode: int
+    config_mode: Optional[int]
     plugins_status: str
     standalone_status: str
     external_status: str
@@ -146,6 +151,10 @@ def user_home() -> Path:
 
 def lexists(path: Path) -> bool:
     return os.path.lexists(str(path))
+
+
+def config_path(path: Path) -> str:
+    return path.as_posix() if os.name == "nt" else str(path)
 
 
 def validate_directory(path: Path, *, label: str) -> None:
@@ -611,7 +620,7 @@ def candidate_config(
     if existing and not isinstance(existing, list):
         fail("skills.config has an unsupported shape")
     managed = [entry for entry in existing if managed_entry(home, entry, specs, inventory)]
-    wanted = [{"path": str(path), "enabled": False} for path in desired]
+    wanted = [{"path": config_path(path), "enabled": False} for path in desired]
     if managed == wanted:
         return before
     skills_table = document.get("skills")
@@ -634,7 +643,7 @@ def candidate_config(
             del entries[index]
     for path in desired:
         table = tomlkit.table()
-        table.add("path", str(path))
+        table.add("path", config_path(path))
         table.add("enabled", False)
         entries.append(table)
     if not entries:
@@ -653,13 +662,13 @@ def candidate_config(
     return rendered if rendered else None
 
 
-def config_mode(path: Path) -> int:
+def config_mode(path: Path) -> Optional[int]:
     if not lexists(path):
-        return 0o600
+        return None if os.name == "nt" else 0o600
     info = path.lstat()
     if stat.S_ISLNK(info.st_mode) or not stat.S_ISREG(info.st_mode):
         fail("global configuration has an unsafe filesystem type")
-    return stat.S_IMODE(info.st_mode)
+    return None if os.name == "nt" else stat.S_IMODE(info.st_mode)
 
 
 def standalone_status(home: Path) -> str:
@@ -715,7 +724,7 @@ def vendored_status(home: Path) -> str:
             source_bytes = read_regular(source, required=True)
             if installed_bytes != source_bytes:
                 return "review"
-            if relative.startswith("scripts/"):
+            if relative.startswith("scripts/") and os.name != "nt":
                 try:
                     installed_executable = bool(stat.S_IMODE(installed.lstat().st_mode) & 0o111)
                     source_executable = bool(stat.S_IMODE(source.lstat().st_mode) & 0o111)
@@ -895,6 +904,8 @@ def print_report(title: str, value: Mapping[str, Any], json_mode: bool) -> None:
 
 
 def fsync_directory(path: Path) -> None:
+    if os.name == "nt":
+        return
     descriptor = os.open(str(path), os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
     try:
         os.fsync(descriptor)
@@ -902,12 +913,16 @@ def fsync_directory(path: Path) -> None:
         os.close(descriptor)
 
 
-def atomic_write(path: Path, data: bytes, mode: int) -> None:
+def atomic_write(path: Path, data: bytes, mode: Optional[int]) -> None:
     descriptor = -1
     temporary: Optional[str] = None
     try:
         descriptor, temporary = tempfile.mkstemp(prefix=".codex-skills-policy-", dir=str(path.parent))
-        os.fchmod(descriptor, mode)
+        if mode is not None:
+            if hasattr(os, "fchmod"):
+                os.fchmod(descriptor, mode)
+            else:
+                os.chmod(temporary, mode)
         with os.fdopen(descriptor, "wb") as handle:
             descriptor = -1
             handle.write(data)
@@ -934,19 +949,34 @@ class Lock:
         self.descriptor: Optional[int] = None
 
     def __enter__(self) -> "Lock":
-        if fcntl is None:
+        if fcntl is None and (os.name != "nt" or msvcrt is None):
             fail("this platform does not provide the required advisory lock")
         flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
         try:
+            if os.name == "nt" and lexists(self.path):
+                path_info = self.path.lstat()
+                if stat.S_ISLNK(path_info.st_mode) or not stat.S_ISREG(path_info.st_mode):
+                    fail("the skill-policy lock has an unsafe filesystem type")
             descriptor = os.open(str(self.path), flags, 0o600)
             info = os.fstat(descriptor)
-            if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1 or info.st_uid != os.geteuid():
+            unsafe = not stat.S_ISREG(info.st_mode) or info.st_nlink != 1
+            if fcntl is not None and os.name != "nt":
+                unsafe = unsafe or info.st_uid != os.geteuid()
+            if unsafe:
                 os.close(descriptor)
                 fail("the skill-policy lock has an unsafe filesystem type")
-            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            if os.name == "nt":
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                msvcrt.locking(descriptor, msvcrt.LK_NBLCK, 1)
+            else:
+                fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
             self.descriptor = descriptor
         except BlockingIOError:
             fail("another skill-policy operation holds the update lock")
+        except PermissionError:
+            if os.name == "nt":
+                fail("another skill-policy operation holds the update lock")
+            fail("the skill-policy lock cannot be acquired")
         except PolicyError:
             raise
         except OSError:
@@ -956,7 +986,11 @@ class Lock:
     def __exit__(self, exc_type: Any, exc: Any, traceback: Any) -> None:
         if self.descriptor is not None:
             try:
-                fcntl.flock(self.descriptor, fcntl.LOCK_UN)
+                if os.name == "nt":
+                    os.lseek(self.descriptor, 0, os.SEEK_SET)
+                    msvcrt.locking(self.descriptor, msvcrt.LK_UNLCK, 1)
+                else:
+                    fcntl.flock(self.descriptor, fcntl.LOCK_UN)
             except OSError:
                 pass
             os.close(self.descriptor)

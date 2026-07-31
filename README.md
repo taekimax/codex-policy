@@ -26,9 +26,7 @@ Everything outside the owned-key manifest is preserved. The tool uses a pinned, 
 
 ## Use from a new machine
 
-Requirements: macOS or Linux and Python 3.9 or newer. The core policy needs the Codex CLI only for its optional diagnostic check; the skill/plugin workflow requires it for sanitized inventory and supported plugin operations.
-
-> **Windows warning:** this repository does not provide a Windows deployment path. The installer fails closed before it plans or writes when its required POSIX advisory lock is unavailable. Do not bypass that guard or substitute an unreviewed WSL/PowerShell workflow; let an agent on the target Windows machine inspect the runtime and choose a separately reviewed, Windows-safe path.
+Requirements: Python 3.9 or newer. On macOS and Linux the installer uses POSIX advisory locks and file modes; on Windows it uses the standard-library `msvcrt` byte-range lock and relies on the Codex home Windows ACL. Windows does not expose POSIX mode bits through Python, so the Windows path verifies content and filesystem types but does not treat mode bits as drift. The core policy needs the Codex CLI only for its optional diagnostic check; the skill/plugin workflow requires it for sanitized inventory and supported plugin operations.
 
 ```bash
 git clone https://github.com/taekimax/codex-policy
@@ -69,7 +67,7 @@ codex-policy recover --apply --yes
 codex-policy audit-repo           public-repository safety audit
 ```
 
-`plan` is the default and creates nothing. `apply` takes an operating-system advisory lock, recomputes the plan, writes private local backups, atomically replaces only changed policy, configuration, and reviewed-user-skill targets, and restores originals if an ordinary failure occurs. The operating system releases the lock after a crash; an interrupted process is detected on the next run and must be recovered before another apply. A no-op apply creates no backup transaction.
+`plan` is the default and creates nothing. `apply` takes an operating-system advisory lock, recomputes the plan, writes private local backups, atomically replaces only changed policy, configuration, and reviewed-user-skill targets, and restores originals if an ordinary failure occurs. The operating system releases the lock after a crash; an interrupted process is detected on the next run and must be recovered before another apply. A no-op apply creates no backup transaction. On Windows, run the command with Python, for example `python bin/codex-policy apply --yes`; the same transaction and rollback rules apply.
 
 An existing `AGENTS.override.md`, invalid TOML, symlinked target, ambiguous owned path, concurrent modification, or unfinished transaction blocks writes. The tool reports only a sanitized status.
 
