@@ -156,7 +156,7 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_file.py",
 }
 REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "fbca3e24c52fd75c18531b9e236861d9a645b8771f68f785eb54aa847506c0d4",
+    "global/AGENTS.md": "895990862c788d33ac348b87a38b71cf64bd70748d16b6b5fc8e28d899cc7208",
     "global/official-skills.json": "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
     "global/skills/oracle-solver/SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
     "global/skills/oracle-solver/agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",

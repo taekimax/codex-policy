@@ -31,6 +31,14 @@ When starting work in a selected repository that has no established continuation
 
 Completion requires real verification appropriate to the task. Review the final result, diff, or behavior against the request; report what passed, failed, or was not run; and expose remaining uncertainty.
 
+## Practical Implementation
+
+- Start with the smallest end-to-end solution that works.
+- Remove obsolete paths instead of adding compatibility layers, fallbacks, or speculative abstractions.
+- Add one capability at a time without breaking the working product.
+- Keep modules focused and check existing dependencies before writing or adding code.
+- Avoid temporary stopgaps; choose designs that can remain in use.
+
 ## Subagents
 
 Use subagents for independent, separable work when they materially improve speed, quality, or main-context focus. Give each subagent a bounded objective and expected output. The main agent integrates and verifies the results. Give each file or external destination one concurrent writer.

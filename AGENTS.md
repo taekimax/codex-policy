@@ -12,6 +12,14 @@ This public repository maintains a portable global Codex policy. `global/AGENTS.
 - This repository is public. Before any commit or push, run `python3 tests/test_acceptance.py` and `./bin/codex-policy audit-repo`, inspect the intended diff and Git identity, and verify the exact remote and visibility.
 - A successful global-file update is visible to newly started Codex sessions. Tell the user to start a new session after `verify` passes.
 
+## Practical Implementation
+
+- Start with the smallest end-to-end solution that works.
+- Remove obsolete paths instead of adding compatibility layers, fallbacks, or speculative abstractions.
+- Add one capability at a time without breaking the working product.
+- Keep modules focused and check existing dependencies before writing or adding code.
+- Avoid temporary stopgaps; choose designs that can remain in use.
+
 ---
 <!-- BEGIN MODEL LOOP POLICY -->
 ## Optional Loop Workspace
