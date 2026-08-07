@@ -1517,6 +1517,11 @@ raise SystemExit(2)
         self.assertIn("Use subagents for independent, separable work", policy_text)
         self.assertIn("The main agent integrates and verifies the results", policy_text)
         self.assertIn("Give each file or external destination one concurrent writer", policy_text)
+        self.assertIn("make the main session the orchestrator", policy_text)
+        self.assertIn("delegate independent detail work to subagents", policy_text)
+        self.assertIn("authoritative, file-backed plan or ledger", policy_text)
+        self.assertIn("one short, self-contained, copy-paste-ready block", policy_text)
+        self.assertIn("Preserve the receiving agent's execution judgment", policy_text)
         self.assertNotIn("### Model routing", policy_text)
         self.assertNotIn("gpt-5.6", policy_text)
         self.assertNotIn("reasoning effort", policy_text)
@@ -1530,7 +1535,7 @@ raise SystemExit(2)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "895990862c788d33ac348b87a38b71cf64bd70748d16b6b5fc8e28d899cc7208",
+            "52d53d8c515d75d8ec500aa23264a9139f3c5b65dd851c8fed3642fb5a4fa584",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
