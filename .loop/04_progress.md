@@ -2,7 +2,7 @@
 
 ## Current Status
 
-In progress
+Complete
 
 ## Completed
 
@@ -13,12 +13,12 @@ In progress
 - Added the concise global Google Workspace artifact invariants and began installer, inventory, documentation, and acceptance integration.
 - Passed the skill validator, all 42 acceptance tests, repository audit, and staged diff check.
 - Forward-tested the reproduction deck read-only: native locale, 16:9 geometry, and Arial defects were detected; incomplete PDF page-box/render evidence correctly prevented PASS. Added speaker notes and notes-master text explicitly to the all-runs font scope.
+- Applied both live policy workflows and verified clean transactions, current managed sources, and source/live byte and mode parity.
+- Published implementation commit `58f1b1d` to public SSH origin `taekimax/codex-policy` on `main`.
 
-## Pending
+## Next Step
 
-- Refresh reviewed hashes after the forward-test refinement and rerun local gates.
-- Apply and verify the live managed state.
-- Commit, push, and verify remote parity.
+Start a new Codex session to load the updated global policy and discover `google-workspace-artifact-qa`.
 
 ## Last Updated
 

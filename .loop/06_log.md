@@ -54,3 +54,10 @@ Use `## YYYY-MM-DD HH:mm | role | title` headings. Record meaningful task events
 - Read-only native Slides inspection found `en-US`, a 16:9 canvas, and Arial effective fonts, so the skill identified the intended failure classes without mutating the file.
 - Native PDF export succeeded but local page-box and PDF-derived full-render evidence was unavailable; the skill correctly refused PASS.
 - The test exposed speaker notes as an ambiguous font scope, so the contract now explicitly includes speaker-notes pages and the notes master.
+
+## 2026-08-10 | coordinator | Google Workspace artifact QA deployed and published
+
+- Passed the final skill validation, 42 acceptance tests, public repository audit, and staged diff checks.
+- Applied the core policy and separately gated skills policy; both final verifies reported clean transactions, current vendored skills, and `verified=passed`.
+- Confirmed byte-identical mode-0644 live copies of the global policy and both QA skill files.
+- Published implementation commit `58f1b1d` to the public SSH `main` branch after Git identity, repository visibility, ancestry, and dry-run push checks.
