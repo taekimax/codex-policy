@@ -89,6 +89,20 @@ VENDORED_USER_SKILL_FILES = (
         "skills/loop-init/scripts/init_loop.py",
         0o755,
     ),
+    (
+        "google-workspace-artifact-qa-instructions",
+        "google-workspace-artifact-qa",
+        REPO_ROOT / "global" / "skills" / "google-workspace-artifact-qa" / "SKILL.md",
+        "skills/google-workspace-artifact-qa/SKILL.md",
+        0o644,
+    ),
+    (
+        "google-workspace-artifact-qa-metadata",
+        "google-workspace-artifact-qa",
+        REPO_ROOT / "global" / "skills" / "google-workspace-artifact-qa" / "agents" / "openai.yaml",
+        "skills/google-workspace-artifact-qa/agents/openai.yaml",
+        0o644,
+    ),
 )
 VENDORED_FILE_NAMES = tuple(item[0] for item in VENDORED_USER_SKILL_FILES)
 VENDORED_TARGETS = {item[0]: item[3] for item in VENDORED_USER_SKILL_FILES}
@@ -131,6 +145,8 @@ EXPECTED_FILES = {
     "global/skills/loop-init/SKILL.md",
     "global/skills/loop-init/agents/openai.yaml",
     "global/skills/loop-init/scripts/init_loop.py",
+    "global/skills/google-workspace-artifact-qa/SKILL.md",
+    "global/skills/google-workspace-artifact-qa/agents/openai.yaml",
     ".loop/README.md",
     ".loop/00_request.md",
     ".loop/01_spec.md",
@@ -156,8 +172,10 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_file.py",
 }
 REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "52d53d8c515d75d8ec500aa23264a9139f3c5b65dd851c8fed3642fb5a4fa584",
-    "global/official-skills.json": "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
+    "global/AGENTS.md": "ff19539e5915b5958178996206d8e008e0f9752f36ec0606f9b9e049c8f3a48c",
+    "global/official-skills.json": "6e7e144d81e3718d56f4777bd7c0627020f5a1843df338014d77ce93d89cdf5f",
+    "global/skills/google-workspace-artifact-qa/SKILL.md": "e003063c481b6cf6382ea161e94dc6637157afde633233bd83f9fe81a9df0675",
+    "global/skills/google-workspace-artifact-qa/agents/openai.yaml": "d7673cfb0254cccc182bb699afe2b67cd732d2a60e2fe634a946e1bd7ddebf88",
     "global/skills/oracle-solver/SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
     "global/skills/oracle-solver/agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
     "global/skills/oracle-solver/scripts/run_oracle.py": "fd4bcbe9130f7966bd37d88c8ef1c6470ad58bbc0c7423a14b60dea8b22db1d7",

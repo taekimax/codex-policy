@@ -2,16 +2,16 @@
 
 ## Raw Request
 
-Introduce the reviewed Loop Init skill into this public policy repository, align its behavior with the repository policy, and repair `codex-skills-policy doctor` so valid Codex desktop turn-diff refs do not fail the repository audit.
+Add concise Google Docs/Slides language, font, size, native-readback, and render-QA invariants to `global/AGENTS.md`; add a uniquely named managed `google-workspace-artifact-qa` skill without modifying official plugin caches; update inventory and acceptance coverage; validate, install live, commit, and push.
 
 ## User Intent
 
-Keep Loop Init opt-in and project-local; make its helper fail closed before mutation, preserve existing user files, and verify an installed source exactly matches the reviewed snapshot. Do not weaken the public-repository Git audit beyond the exact runtime ref shapes observed.
+Prevent Korean font substitution, locale drift, and A4-versus-16:9 mistakes. Make final QA read/export-only by default, fail closed on unsupported or unobservable required properties, and require native PDF export plus full-page rendering before pass.
 
-## Open Questions
+## Authority
 
-- Should policy deployment include the live Loop Init source? Resolved: yes, after source verification and explicit user authorization in this request.
+Repository implementation, local verification, live policy and skill installation, commit, and push are explicitly authorized. Preserve unrelated user work and do not modify official plugin caches.
 
 ## Date Created
 
-2026-07-22
+2026-08-10

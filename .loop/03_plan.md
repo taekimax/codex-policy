@@ -2,20 +2,19 @@
 
 ## Outcome
 
-Adopt and deploy a policy-aligned Loop Init skill while preserving the public policy’s narrow ownership model.
+Publish and deploy a managed Google Workspace Artifact QA skill and the corresponding portable global invariants.
 
 ## Steps
 
-1. Initialize `.loop/` in create-missing mode and record this task.
-2. Add the reviewed Loop Init source, manifest entry, source-drift verification, and documentation.
-3. Tighten the helper against marker ambiguity and ordinary partial-write failure.
-4. Permit only validated desktop turn-diff refs in the public audit and add regression tests.
-5. Deploy the approved global policy and reviewed Loop Init source, then run required verification.
-6. Permit policy-triggered Loop Init inspection for suitable new-repository work while retaining explicit confirmation before initialization.
+1. Inspect the clean checkout, README, existing managed-skill implementation, official authoring skills, and current read-only policy plans.
+2. Create the skill with the standard initializer and implement the read-only QA contract.
+3. Update global policy, project documentation, inventory, installers, audit allowlists and reviewed hashes, and acceptance coverage.
+4. Validate the skill, run focused and full local gates, and forward-test the QA behavior against a realistic converted Slides case.
+5. Review the exact diff, apply the core policy and managed skill live, and verify source/live parity plus skills-policy state.
+6. Verify Git identity, SSH remote and public visibility; commit, push, refetch, and confirm local/remote parity.
 
 ## Risks
 
-- A too-broad Git-ref exception could mask unsafe repository state.
-- A source drift check must be advisory when a managed user skill is absent but blocking when it is partially present or mismatched.
-
-- No plugin marketplace or global configuration expansion is planned.
+- Inherited text styles can hide Arial substitution unless every effective font is resolved.
+- Google APIs may expose required root properties as read-only; the skill must fail rather than imply repair.
+- Hash-pinned public audit data must be updated only after the reviewed artifacts are final.

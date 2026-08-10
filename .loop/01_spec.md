@@ -2,24 +2,24 @@
 
 ## Objective
 
-Add `global/skills/loop-init` as a reviewed user-skill source and make `codex-skills-policy` detect source drift without managing unrelated skills.
+Manage a portable Google Workspace artifact QA policy and skill that catch locale, effective-font, page-mode, physical-size, and rendered-output defects.
 
 ## Scope
 
-- Initialize this repository with `.loop/` in create-missing mode.
-- Replace mandatory role and stale-chat authority language with optional, task-scoped durable-record guidance.
-- Reject duplicate or malformed managed `AGENTS.md` markers before writing.
-- Preflight target topology and roll back ordinary write failures.
-- Permit only exact local `refs/codex/turn-diffs/...` capture/checkpoint patterns in the repository audit.
+- Add only common pre-authoring and post-conversion invariants to `global/AGENTS.md`.
+- Add `global/skills/google-workspace-artifact-qa/{SKILL.md,agents/openai.yaml}` as an exact reviewed source.
+- Extend the core installer, official inventory, cross-verification, public audit allowlist and hashes, README, and acceptance suite.
+- Apply and verify the reviewed global policy and skill in the live Codex home, then publish the repository change.
 
 ## Out of Scope
 
-- Global configuration ownership, permissions, credentials, marketplaces, and unrelated skills.
-- Broad Git-ref allowlisting or a networked install path.
+- Modifying official `google-docs`, `google-slides`, or `presentations` plugin caches.
+- Automatically repairing Google files during QA.
+- Adding credentials, API permissions, marketplace ownership, or a Google-specific runtime client.
 
-- Acceptance tests cover reviewed source drift, marker rejection, initialization behavior, and the constrained Git-ref exception.
-- `codex-policy` and `codex-skills-policy` plan/apply/verify report a clean state after approved deployment.
+## Acceptance
 
-## Unknowns
-
-- Runtime-specific ref formats may change; unexpected refs must remain blocked.
+- Korean locale and Google-supported font rules, A4 dimensions, 16:9 rejection for A4, native readback, native PDF export, and all-page render verification are explicit.
+- Slides resolves every text run through inherited styles; Docs checks PAGES/PAGELESS, geometry, margins, and effective fonts.
+- Managed install and drift detection cover both QA skill files.
+- Skill validation, acceptance, repository audit, live plan/apply/verify, diff checks, and source/live parity pass.

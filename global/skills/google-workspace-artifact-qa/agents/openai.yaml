@@ -1,0 +1,4 @@
+interface:
+  display_name: "Google Workspace Artifact QA"
+  short_description: "Verify native Docs and Slides output fidelity"
+  default_prompt: "Use $google-workspace-artifact-qa to verify this final Google Docs or Slides artifact."

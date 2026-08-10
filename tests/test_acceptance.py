@@ -38,6 +38,8 @@ ORACLE_SKILL = REPO / "global" / "skills" / "oracle-solver"
 ORACLE_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/run_oracle.py")
 LOOP_INIT_SKILL = REPO / "global" / "skills" / "loop-init"
 LOOP_INIT_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/init_loop.py")
+GOOGLE_WORKSPACE_QA_SKILL = REPO / "global" / "skills" / "google-workspace-artifact-qa"
+GOOGLE_WORKSPACE_QA_FILES = ("SKILL.md", "agents/openai.yaml")
 REQUIRED_PLUGIN_SKILLS = {
     "documents@openai-primary-runtime": {"documents"},
     "pdf@openai-primary-runtime": {"pdf"},
@@ -260,6 +262,13 @@ raise SystemExit(2)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(LOOP_INIT_SKILL / relative, destination)
 
+    def write_current_google_workspace_qa(self) -> None:
+        target = self.home / "skills" / "google-workspace-artifact-qa"
+        for relative in GOOGLE_WORKSPACE_QA_FILES:
+            destination = target / relative
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(GOOGLE_WORKSPACE_QA_SKILL / relative, destination)
+
     def make_current_skills_environment(
         self,
         extra_installed: Sequence[Dict[str, object]] = (),
@@ -286,6 +295,7 @@ raise SystemExit(2)
         for source_root, files, destination_name in (
             (ORACLE_SKILL, ORACLE_FILES, "oracle-solver"),
             (LOOP_INIT_SKILL, LOOP_INIT_FILES, "loop-init"),
+            (GOOGLE_WORKSPACE_QA_SKILL, GOOGLE_WORKSPACE_QA_FILES, "google-workspace-artifact-qa"),
         ):
             for relative in files:
                 source = source_root / relative
@@ -437,7 +447,7 @@ raise SystemExit(2)
         result = self.run_policy(
             "apply",
             "--yes",
-            extra_environment={"CODEX_POLICY_TEST_FAIL_AFTER": "3"},
+            extra_environment={"CODEX_POLICY_TEST_FAIL_AFTER": "9"},
         )
         self.assertEqual(result.returncode, 2)
         self.assertFalse((self.home / "AGENTS.md").exists())
@@ -450,6 +460,8 @@ raise SystemExit(2)
         target = self.home / "skills" / "loop-init" / "scripts" / "init_loop.py"
         target.write_text(target.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
         target.chmod(0o644)
+        qa_target = self.home / "skills" / "google-workspace-artifact-qa" / "SKILL.md"
+        qa_target.write_text(qa_target.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
         plan = self.run_policy("plan", "--json")
         self.assertEqual(plan.returncode, 0, plan.stderr)
         self.assertEqual(json.loads(plan.stdout)["vendored_user_skills"], "drifted")
@@ -457,6 +469,7 @@ raise SystemExit(2)
         self.assertEqual(repaired.returncode, 0, repaired.stderr)
         source = LOOP_INIT_SKILL / "scripts" / "init_loop.py"
         self.assertEqual(target.read_bytes(), source.read_bytes())
+        self.assertEqual(qa_target.read_bytes(), (GOOGLE_WORKSPACE_QA_SKILL / "SKILL.md").read_bytes())
         if os.name != "nt":
             self.assertEqual(stat.S_IMODE(target.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
 
@@ -837,6 +850,7 @@ raise SystemExit(2)
     def test_official_skills_context7_requires_true_policy_and_narrow_trigger(self) -> None:
         environment = self.make_current_skills_environment()
         self.write_current_context7()
+        self.write_current_google_workspace_qa()
         self.write_current_oracle()
         self.write_current_loop_init()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
@@ -860,6 +874,7 @@ raise SystemExit(2)
     def test_official_skills_oracle_requires_exact_reviewed_source(self) -> None:
         environment = self.make_current_skills_environment()
         self.write_current_context7()
+        self.write_current_google_workspace_qa()
         self.write_current_oracle()
         self.write_current_loop_init()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
@@ -875,6 +890,7 @@ raise SystemExit(2)
 
     def test_official_skills_loop_init_requires_exact_reviewed_source(self) -> None:
         environment = self.make_current_skills_environment()
+        self.write_current_google_workspace_qa()
         self.write_current_oracle()
         self.write_current_loop_init()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
@@ -883,6 +899,22 @@ raise SystemExit(2)
 
         helper = self.home / "skills" / "loop-init" / "scripts" / "init_loop.py"
         helper.write_text(helper.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
+        drifted = self.run_skills_policy("verify", "--json", extra_environment=environment)
+        self.assertEqual(drifted.returncode, 1, drifted.stderr)
+        self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
+        self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
+
+    def test_official_skills_google_workspace_qa_requires_exact_reviewed_source(self) -> None:
+        environment = self.make_current_skills_environment()
+        self.write_current_google_workspace_qa()
+        self.write_current_oracle()
+        self.write_current_loop_init()
+        current = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(current.returncode, 0, current.stderr)
+        self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
+
+        metadata = self.home / "skills" / "google-workspace-artifact-qa" / "agents" / "openai.yaml"
+        metadata.write_text(metadata.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
         drifted = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(drifted.returncode, 1, drifted.stderr)
         self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
@@ -1532,14 +1564,19 @@ raise SystemExit(2)
         self.assertIn("never rely on unbounded default parallelism", policy_text)
         self.assertIn("consider `$loop-init` in read-only `inspect` mode", policy_text)
         self.assertIn("Inspection does not authorize writes", policy_text)
+        self.assertIn("## Google Workspace Artifact Standards", policy_text)
+        self.assertIn("Set Korean artifacts to a Korean file language", policy_text)
+        self.assertIn("A 16:9 slide canvas is not A4", policy_text)
+        self.assertIn("export the native artifact to PDF and render every page or slide", policy_text)
+        self.assertIn("use a verified native template or rewrite the artifact", policy_text)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "52d53d8c515d75d8ec500aa23264a9139f3c5b65dd851c8fed3642fb5a4fa584",
+            "ff19539e5915b5958178996206d8e008e0f9752f36ec0606f9b9e049c8f3a48c",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
-            "605db678f997f667551720397cdcea653ba2cb9def6674628eca9d301adc5c06",
+            "6e7e144d81e3718d56f4777bd7c0627020f5a1843df338014d77ce93d89cdf5f",
         )
         self.assertEqual(
             {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
@@ -1557,9 +1594,27 @@ raise SystemExit(2)
                 "scripts/init_loop.py": "01db0e4ed1c3273cb4d65d0e387ca25d218a57bad75e04c9d838ced7beb72e94",
             },
         )
+        self.assertEqual(
+            {
+                relative: digest((GOOGLE_WORKSPACE_QA_SKILL / relative).read_bytes())
+                for relative in GOOGLE_WORKSPACE_QA_FILES
+            },
+            {
+                "SKILL.md": "e003063c481b6cf6382ea161e94dc6637157afde633233bd83f9fe81a9df0675",
+                "agents/openai.yaml": "d7673cfb0254cccc182bb699afe2b67cd732d2a60e2fe634a946e1bd7ddebf88",
+            },
+        )
         loop_text = (LOOP_INIT_SKILL / "SKILL.md").read_text(encoding="utf-8")
         self.assertIn("Policy-triggered use is inspect-only", loop_text)
         self.assertIn("does not authorize initialization", loop_text)
+        qa_text = (GOOGLE_WORKSPACE_QA_SKILL / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Noto Sans KR", qa_text)
+        self.assertIn("Resolve the effective font for every nonempty text run", qa_text)
+        self.assertIn("speaker-notes page", qa_text)
+        self.assertIn("notes master", qa_text)
+        self.assertIn("documentStyle.documentFormat.documentMode", qa_text)
+        self.assertIn("Do not issue `batchUpdate`", qa_text)
+        self.assertIn("Return `PASS` only", qa_text)
 
 
 if __name__ == "__main__":

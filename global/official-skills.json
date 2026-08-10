@@ -128,6 +128,7 @@
     {"name": "context7-cli", "policy": "implicit-narrow"}
   ],
   "vendored_user_skills": [
+    {"name": "google-workspace-artifact-qa", "source": "global/skills/google-workspace-artifact-qa", "runtime_policy": "exact-reviewed-source"},
     {"name": "loop-init", "source": "global/skills/loop-init", "runtime_policy": "exact-reviewed-source"},
     {"name": "oracle-solver", "source": "global/skills/oracle-solver", "runtime_policy": "exact-reviewed-source"}
   ],

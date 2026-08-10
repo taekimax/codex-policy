@@ -48,7 +48,10 @@ ORACLE_SOURCE = REPO_ROOT / "global" / "skills" / "oracle-solver"
 ORACLE_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/run_oracle.py")
 LOOP_INIT_SOURCE = REPO_ROOT / "global" / "skills" / "loop-init"
 LOOP_INIT_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/init_loop.py")
+GOOGLE_WORKSPACE_QA_SOURCE = REPO_ROOT / "global" / "skills" / "google-workspace-artifact-qa"
+GOOGLE_WORKSPACE_QA_FILES = ("SKILL.md", "agents/openai.yaml")
 VENDORED_USER_SKILLS = {
+    "google-workspace-artifact-qa": (GOOGLE_WORKSPACE_QA_SOURCE, GOOGLE_WORKSPACE_QA_FILES),
     "oracle-solver": (ORACLE_SOURCE, ORACLE_FILES),
     "loop-init": (LOOP_INIT_SOURCE, LOOP_INIT_FILES),
 }
@@ -290,6 +293,11 @@ def load_manifest() -> Dict[str, Any]:
         fail("the disabled-skill policy differs from the reviewed state")
     vendored = value.get("vendored_user_skills")
     if vendored != [
+        {
+            "name": "google-workspace-artifact-qa",
+            "source": "global/skills/google-workspace-artifact-qa",
+            "runtime_policy": "exact-reviewed-source",
+        },
         {
             "name": "loop-init",
             "source": "global/skills/loop-init",

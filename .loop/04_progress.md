@@ -2,24 +2,24 @@
 
 ## Current Status
 
-Complete
+In progress
 
 ## Completed
 
-- Initialized `.loop/` in confirmed create-missing mode.
-- Added a first reviewed Loop Init source and policy manifest entry.
-- Replaced the generated project policy with optional, task-scoped loop guidance.
-- Deployed the exact reviewed Loop Init source to the authorized runtime installation.
-- Passed skill validation, 36 acceptance tests, policy verification, repository audit, and `codex-skills-policy doctor`.
-- Permitted policy-triggered Loop Init inspection only for suitable new-repository work, with confirmation still required before initialization.
-- Redeployed the global policy and reviewed Loop Init source; both policy verifies and the final audit passed.
-- Added and deployed global context-continuity guidance for authoritative plans/ledgers, compact subagent handoffs, bounded context loading, and evidence-based resumption after new sessions or compaction. Preserved the existing A4 document policy in portable source form; 41 acceptance tests, repository audit, source/live byte parity, and final policy verification passed.
-- Finalized and redeployed the orchestration and handoff guidance: complex or long-running work explicitly makes the main session the orchestrator, independent detail work goes to subagents, status and evidence stay in a concise file-backed plan or ledger, and cross-session messages contain only the core objective, constraints, verified current state, and authoritative artifact paths or links. Final policy plan and verify both report no drift.
+- Confirmed a clean `main == origin/main` checkout and SSH origin.
+- Read the repository workflow, prior loop state, managed-skill installer and inventory structure, and current policy plans.
+- Read `skill-creator` plus the official Google Docs, Google Slides, and Presentations skill contracts without modifying plugin caches.
+- Initialized and drafted `google-workspace-artifact-qa` with a read-only native-readback, effective-font, PDF-export, and full-render gate.
+- Added the concise global Google Workspace artifact invariants and began installer, inventory, documentation, and acceptance integration.
+- Passed the skill validator, all 42 acceptance tests, repository audit, and staged diff check.
+- Forward-tested the reproduction deck read-only: native locale, 16:9 geometry, and Arial defects were detected; incomplete PDF page-box/render evidence correctly prevented PASS. Added speaker notes and notes-master text explicitly to the all-runs font scope.
 
-## Next Step
+## Pending
 
-Start a new Codex session to discover the updated global policy and Loop Init trigger.
+- Refresh reviewed hashes after the forward-test refinement and rerun local gates.
+- Apply and verify the live managed state.
+- Commit, push, and verify remote parity.
 
 ## Last Updated
 
-2026-08-07
+2026-08-10

@@ -58,6 +58,14 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
 - Encode page geometry explicitly in every Word section. With 1 inch left and right margins, A4 portrait has a 9026 DXA usable width; derive table and header/footer widths from the actual section instead of reusing Letter-width constants.
 - After the last DOCX mutation and before delivery or Google Docs import, run `"$PYTHON_BIN" "${CODEX_HOME:-$HOME/.codex}/tools/verify_docx_page_size.py" <file.docx>` with the bundled workspace Python for the A4 default. If another size is explicitly required, pass it with `--expect`. Treat a missing, ambiguous, mixed, or unexpected section size as a failed delivery gate.
 
+## Google Workspace Artifact Standards
+
+- Before authoring, decide the file language, Google-editor-supported fonts, final page or slide size and orientation, and whether the artifact is screen-first or print-first.
+- Set Korean artifacts to a Korean file language and explicitly use a Google-supported Korean font. Do not rely on OS-only fonts or glyph fallback.
+- Unless instructed otherwise, use A4 for documents: 210 x 297 mm portrait or 297 x 210 mm landscape, encoded in the source or native artifact. A 16:9 slide canvas is not A4 and must not pass as an A4 or print-first output.
+- After conversion, read back the native Google artifact's locale, effective fonts, and page or slide size; export the native artifact to PDF and render every page or slide for verification.
+- If the available API cannot set a required property, use a verified native template or rewrite the artifact. Treat the mismatch as a failed gate rather than hiding it with a partial or post-export correction.
+
 ## Subagents
 
 Use subagents for independent, separable work when they materially improve speed, quality, or main-context focus. Give each subagent a bounded objective and expected output. The main agent integrates and verifies the results. Give each file or external destination one concurrent writer.

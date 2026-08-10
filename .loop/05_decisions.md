@@ -27,3 +27,15 @@ Append decision records below. Do not rewrite prior decisions unless correcting 
 - Reason: Overly prescriptive handoffs duplicate durable plans, consume context, and unnecessarily restrict the receiving agent's evidence-based judgment.
 - Alternatives Considered: Reproduce the full plan in every handoff; require fixed implementation steps, tools, delegation structure, and verification sequences.
 - Reversal Condition: Add specificity only when explicitly requested or necessary for safety, correctness, authorization, or preservation of user work.
+
+- Date: 2026-08-10
+- Decision: Manage `google-workspace-artifact-qa` as a two-file reviewed user skill installed by the core policy workflow, while keeping the official Google Docs, Google Slides, and Presentations plugin sources untouched.
+- Reason: The QA contract is user-specific and cross-cuts multiple authoring routes; a separate managed skill can fail closed on native output without forking official skills.
+- Alternatives Considered: Patch official plugin caches; put all API-specific checks in global policy; rely only on authoring-skill visual checks.
+- Reversal Condition: Reconsider packaging only if an official stable QA surface provides the same locale, effective-font, physical-size, native-export, and read-only guarantees.
+
+- Date: 2026-08-10
+- Decision: Treat unavailable required readback as `BLOCKED`, not `PASS`, and require a verified native template or separate rewrite when presentation-wide properties cannot be set.
+- Reason: Locale and page-size defects cannot be safely hidden through partial text edits or export scaling.
+- Alternatives Considered: Best-effort pass with warnings; automatic target mutation during QA.
+- Reversal Condition: Narrow the rule only if the native APIs gain authoritative read/write support and the user separately authorizes repair.
