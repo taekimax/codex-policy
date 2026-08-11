@@ -50,8 +50,19 @@ LOOP_INIT_SOURCE = REPO_ROOT / "global" / "skills" / "loop-init"
 LOOP_INIT_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/init_loop.py")
 GOOGLE_WORKSPACE_QA_SOURCE = REPO_ROOT / "global" / "skills" / "google-workspace-artifact-qa"
 GOOGLE_WORKSPACE_QA_FILES = ("SKILL.md", "agents/openai.yaml")
+LOCAL_DOCUMENT_EXTRACTION_SOURCE = REPO_ROOT / "global" / "skills" / "local-document-extraction"
+LOCAL_DOCUMENT_EXTRACTION_FILES = (
+    "SKILL.md",
+    "agents/openai.yaml",
+    "scripts/extract_docling.py",
+    "scripts/extract_ocr.py",
+    "scripts/provision_runtime.sh",
+    "scripts/run_docling.sh",
+    "scripts/run_ocr.sh",
+)
 VENDORED_USER_SKILLS = {
     "google-workspace-artifact-qa": (GOOGLE_WORKSPACE_QA_SOURCE, GOOGLE_WORKSPACE_QA_FILES),
+    "local-document-extraction": (LOCAL_DOCUMENT_EXTRACTION_SOURCE, LOCAL_DOCUMENT_EXTRACTION_FILES),
     "oracle-solver": (ORACLE_SOURCE, ORACLE_FILES),
     "loop-init": (LOOP_INIT_SOURCE, LOOP_INIT_FILES),
 }
@@ -301,6 +312,11 @@ def load_manifest() -> Dict[str, Any]:
         {
             "name": "loop-init",
             "source": "global/skills/loop-init",
+            "runtime_policy": "exact-reviewed-source",
+        },
+        {
+            "name": "local-document-extraction",
+            "source": "global/skills/local-document-extraction",
             "runtime_policy": "exact-reviewed-source",
         },
         {

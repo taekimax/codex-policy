@@ -103,6 +103,55 @@ VENDORED_USER_SKILL_FILES = (
         "skills/google-workspace-artifact-qa/agents/openai.yaml",
         0o644,
     ),
+    (
+        "local-document-extraction-instructions",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "SKILL.md",
+        "skills/local-document-extraction/SKILL.md",
+        0o644,
+    ),
+    (
+        "local-document-extraction-metadata",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "agents" / "openai.yaml",
+        "skills/local-document-extraction/agents/openai.yaml",
+        0o644,
+    ),
+    (
+        "local-document-extraction-ocr-launcher",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "scripts" / "run_ocr.sh",
+        "skills/local-document-extraction/scripts/run_ocr.sh",
+        0o755,
+    ),
+    (
+        "local-document-extraction-ocr-helper",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "scripts" / "extract_ocr.py",
+        "skills/local-document-extraction/scripts/extract_ocr.py",
+        0o755,
+    ),
+    (
+        "local-document-extraction-docling-launcher",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "scripts" / "run_docling.sh",
+        "skills/local-document-extraction/scripts/run_docling.sh",
+        0o755,
+    ),
+    (
+        "local-document-extraction-docling-helper",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "scripts" / "extract_docling.py",
+        "skills/local-document-extraction/scripts/extract_docling.py",
+        0o755,
+    ),
+    (
+        "local-document-extraction-provisioner",
+        "local-document-extraction",
+        REPO_ROOT / "global" / "skills" / "local-document-extraction" / "scripts" / "provision_runtime.sh",
+        "skills/local-document-extraction/scripts/provision_runtime.sh",
+        0o755,
+    ),
 )
 VENDORED_FILE_NAMES = tuple(item[0] for item in VENDORED_USER_SKILL_FILES)
 VENDORED_TARGETS = {item[0]: item[3] for item in VENDORED_USER_SKILL_FILES}
@@ -147,6 +196,13 @@ EXPECTED_FILES = {
     "global/skills/loop-init/scripts/init_loop.py",
     "global/skills/google-workspace-artifact-qa/SKILL.md",
     "global/skills/google-workspace-artifact-qa/agents/openai.yaml",
+    "global/skills/local-document-extraction/SKILL.md",
+    "global/skills/local-document-extraction/agents/openai.yaml",
+    "global/skills/local-document-extraction/scripts/extract_docling.py",
+    "global/skills/local-document-extraction/scripts/extract_ocr.py",
+    "global/skills/local-document-extraction/scripts/provision_runtime.sh",
+    "global/skills/local-document-extraction/scripts/run_docling.sh",
+    "global/skills/local-document-extraction/scripts/run_ocr.sh",
     ".loop/README.md",
     ".loop/00_request.md",
     ".loop/01_spec.md",
@@ -173,7 +229,7 @@ EXPECTED_FILES = {
 }
 REVIEWED_ARTIFACT_HASHES = {
     "global/AGENTS.md": "ff19539e5915b5958178996206d8e008e0f9752f36ec0606f9b9e049c8f3a48c",
-    "global/official-skills.json": "6e7e144d81e3718d56f4777bd7c0627020f5a1843df338014d77ce93d89cdf5f",
+    "global/official-skills.json": "97f7c1419f3e40a660c3d84381499f53c1da3b3b57a3a4ca5829a96a84fdc6e4",
     "global/skills/google-workspace-artifact-qa/SKILL.md": "e003063c481b6cf6382ea161e94dc6637157afde633233bd83f9fe81a9df0675",
     "global/skills/google-workspace-artifact-qa/agents/openai.yaml": "d7673cfb0254cccc182bb699afe2b67cd732d2a60e2fe634a946e1bd7ddebf88",
     "global/skills/oracle-solver/SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
@@ -182,6 +238,13 @@ REVIEWED_ARTIFACT_HASHES = {
     "global/skills/loop-init/SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
     "global/skills/loop-init/agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
     "global/skills/loop-init/scripts/init_loop.py": "01db0e4ed1c3273cb4d65d0e387ca25d218a57bad75e04c9d838ced7beb72e94",
+    "global/skills/local-document-extraction/SKILL.md": "53970df737f25c22ea417f38e7944001fe5adf3b05404b5a916e8b03e9923a97",
+    "global/skills/local-document-extraction/agents/openai.yaml": "84fba656331b01552bcc27b0a6aa24534ec4a68393e43a241ccc7a86798a9de8",
+    "global/skills/local-document-extraction/scripts/extract_docling.py": "f046ed1706488b9628dbf7eb0bbd608779b66a87f3a384e5fda1077683494b0e",
+    "global/skills/local-document-extraction/scripts/extract_ocr.py": "076ff81771fae8867da81d8ca534cf8a9bdd90fb6bf416c47b3b5a9dc549dc10",
+    "global/skills/local-document-extraction/scripts/provision_runtime.sh": "435d4a2c5cf8229621e226678da984cf8a2731a189c7daf2322f25531910981e",
+    "global/skills/local-document-extraction/scripts/run_docling.sh": "498673dd4ec507c4d34b8dea91c172abb4b73b97ef9b5eb8cdcde75bc9be008e",
+    "global/skills/local-document-extraction/scripts/run_ocr.sh": "391d260071052701abfba8a51c9ac6e69895525ceb155090e36827bf2fb738e0",
 }
 LOCAL_RUNTIME_DIRECTORIES = {".loop/backups"}
 
@@ -333,6 +396,9 @@ def validate_vendored_sources() -> Dict[str, bytes]:
             try:
                 compile(text, str(source), "exec")
             except SyntaxError:
+                fail("a vendored skill script is invalid")
+        elif target.endswith(".sh"):
+            if not text.startswith("#!/usr/bin/env bash\n") or "set -euo pipefail\n" not in text:
                 fail("a vendored skill script is invalid")
         else:
             fail("a vendored skill source declaration is invalid")
@@ -1127,6 +1193,11 @@ def audit_git_history() -> None:
                 "bin/codex-skills-policy",
                 "global/skills/oracle-solver/scripts/run_oracle.py",
                 "global/skills/loop-init/scripts/init_loop.py",
+                "global/skills/local-document-extraction/scripts/extract_docling.py",
+                "global/skills/local-document-extraction/scripts/extract_ocr.py",
+                "global/skills/local-document-extraction/scripts/provision_runtime.sh",
+                "global/skills/local-document-extraction/scripts/run_docling.sh",
+                "global/skills/local-document-extraction/scripts/run_ocr.sh",
             }
             else "100644"
         )
@@ -1207,6 +1278,11 @@ def audit_repository() -> None:
                     "bin/codex-skills-policy",
                     "global/skills/oracle-solver/scripts/run_oracle.py",
                     "global/skills/loop-init/scripts/init_loop.py",
+                    "global/skills/local-document-extraction/scripts/extract_docling.py",
+                    "global/skills/local-document-extraction/scripts/extract_ocr.py",
+                    "global/skills/local-document-extraction/scripts/provision_runtime.sh",
+                    "global/skills/local-document-extraction/scripts/run_docling.sh",
+                    "global/skills/local-document-extraction/scripts/run_ocr.sh",
                 }
             ):
                 fail("repository audit found an unsafe executable mode")

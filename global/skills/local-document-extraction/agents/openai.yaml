@@ -1,0 +1,6 @@
+interface:
+  display_name: "Local Document Extraction"
+  short_description: "Local OCR and structured document extraction"
+  default_prompt: "Use $local-document-extraction to extract this local document without sending it to a remote service."
+policy:
+  allow_implicit_invocation: true
