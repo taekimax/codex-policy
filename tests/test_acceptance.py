@@ -1856,7 +1856,7 @@ raise SystemExit(2)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "ff19539e5915b5958178996206d8e008e0f9752f36ec0606f9b9e049c8f3a48c",
+            "a74868e345a8f93ec125578ef6adc9777bf82b9ded4c7af4191813fd7c72414d",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),

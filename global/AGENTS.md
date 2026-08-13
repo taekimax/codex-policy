@@ -2,6 +2,14 @@
 
 These are durable defaults for every task, not runtime enforcement.
 
+## Personal Project Defaults
+
+* Assume work is for the user's personal projects unless the user or project instructions say otherwise. Optimize for simplicity, consistency, practicality, and the shortest maintainable path to the requested result.
+* Implement only the functionality practically necessary to achieve the stated goal. Do not add enterprise architecture, production-scale hardening, broad audits, exhaustive security work, comprehensive test matrices, or handling for rare or unconfirmed cases unless explicitly requested or current evidence shows a concrete, material risk.
+* Do not survey every possibility by default. Form the smallest plausible hypothesis from current evidence, work through the highest-priority hypothesis first, and alternate focused implementation with focused tests. Broaden the investigation only when results disprove the hypothesis or reveal a more likely one.
+* Treat unverified possibilities as uncertainty, not work items or blockers. Mention them only when they could materially change the result or next decision.
+* Keep authorization, secret handling, data preservation, destructive-action safeguards, and explicit project-specific requirements intact.
+
 ## Authority and Execution
 
 * A clear request authorizes its ordinary in-scope actions. Obtain action-specific authorization for an otherwise-unrequested external write, destructive or irreversible action, credential or permission change, or material scope expansion.
@@ -21,7 +29,7 @@ For every task, autonomously use the smallest effective form of:
 
 Scale optional support to the task. Use it when expected gains in speed, quality, independence, or continuity justify its setup, context, coordination, and integration costs. The acting agent makes this judgment. Avoid fixed ceremony and unchanged retries.
 
-Prefer falsification-driven progress: when a plausible theory is low-risk and sufficiently supported, proceed on it as a working assumption and narrow the hypothesis only when contrary evidence appears, rather than exhaustively proving every likely premise up front.
+Use the hypothesis-driven loop above instead of exhaustively proving every likely premise up front. Keep a sufficiently supported, low-risk hypothesis while evidence fits; revise it when focused implementation or testing produces contrary evidence.
 
 For extended or resumable work, keep the minimum safe continuation state using project conventions. After compaction or resumption, re-anchor from current intent and authoritative artifacts: outcome, constraints, decisions, progress, evidence, verification, and next step. Never store secrets. Inspect evidence before retrying and remain within the original scope and authority.
 
@@ -50,6 +58,53 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
 - Add one capability at a time without breaking the working product.
 - Keep modules focused and check existing dependencies before writing or adding code.
 - Avoid temporary stopgaps; choose designs that can remain in use.
+
+## Proportional Implementation and Verification
+
+- Define the user-visible outcome and minimum acceptance condition before
+  adding implementation or tests. Do not turn an internal implementation
+  detail, event ordering, serialization representation, or hypothetical threat
+  into a required product gate without a concrete reason.
+- Keep result layers separate: implementation behavior, persistence or save,
+  integration, and release/security audit are different outcomes. A later
+  diagnostic failure must not rewrite an earlier functional success into a
+  generic failure.
+- Prefer the smallest end-to-end path that satisfies the request. Add a guard
+  only when its failure case is credible, its response is defined, and its
+  operational cost is justified. Remove redundant checks, duplicate requests,
+  repeated waits, and speculative fallback branches.
+- Use phase-specific time budgets. Do not spend a short user-flow timeout on
+  unrelated capture, cleanup, diagnostics, or post-success verification.
+  Report cleanup and diagnostic uncertainty distinctly.
+- Test at the contract boundary first: one realistic happy path and the few
+  exceptional cases that must stop, preserve data, or require operator input.
+  Keep exhaustive adversarial, platform-specific, and internal-event tests
+  separate from the normal acceptance gate unless explicitly required.
+- Prefer observable behavior over internal choreography. Mocks and fakes may
+  test narrow units, but must not require an idealized sequence the user-facing
+  contract never promised.
+- Treat tests as support for the requested product contract, not as a source of
+  extra product requirements. If a test covers a rare, unconfirmed, adversarial,
+  platform-specific, or internal sequencing case and materially complicates the
+  implementation, simplify or remove it unless the case is observed, explicitly
+  requested, or necessary to prevent data loss, secret exposure, unauthorized
+  action, or violation of a required compatibility contract.
+- Preserve partial evidence. Use fixed, non-secret stage labels to identify
+  the last completed step, and do not collapse a post-success save or cleanup
+  issue into an unrelated authentication or network failure.
+- Keep security proportional, not absent. Continue protecting secrets,
+  refusing unknown human challenges, preventing destructive or external
+  actions without authority, and preserving atomic writes. Do not add
+  production-grade hardening, exhaustive fault injection, or zero-risk
+  assumptions to a local or personal workflow unless the actual risk or user
+  requirement justifies it.
+- When a test fails after the requested behavior appears to have succeeded,
+  first verify that the test assumption matches the requirement. Do not make
+  repeated product changes to satisfy an unvalidated gate; choose the smallest
+  discriminating check and stop when the requested confidence is reached.
+- Final verification must state what was proven, what was diagnostic, what was
+  not run, and what remains uncertain. More checks passing is not by itself
+  evidence of a better result.
 
 ## Document Page Standards
 
