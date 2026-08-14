@@ -108,6 +108,12 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
 
 ## macOS App Installation
 
+- A clear request to install, update, or replace a named app authorizes the
+  ordinary recoverable replacement of its existing installed bundle. Do not
+  request a redundant step-specific confirmation merely because the target is
+  in `/Applications`. This does not authorize permanent deletion, privilege
+  escalation, permission changes, or changes to unrelated apps, services, or
+  data.
 - Build a package-only staged app bundle. When source or package inputs change,
   perform the bundle audit and strict code-signature verification once; do not
   repeat them without a changed input or a concrete failure.
