@@ -106,6 +106,31 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
   not run, and what remains uncertain. More checks passing is not by itself
   evidence of a better result.
 
+## macOS App Installation
+
+- Build a package-only staged app bundle. When source or package inputs change,
+  perform the bundle audit and strict code-signature verification once; do not
+  repeat them without a changed input or a concrete failure.
+- Before replacing an installed app, quit the existing app and its app-owned
+  services. Move an existing installed bundle to the user's Trash under a
+  timestamped name rather than deleting it, so it remains recoverable.
+- Copy the verified staged bundle to the intended Applications directory
+  (normally `/Applications`). Keep both the package output and displaced bundle
+  until normal execution is confirmed, and do not empty the Trash.
+- If macOS denies permission, do not repeatedly retry, use `sudo`, apply an
+  ad-hoc signature, bypass Gatekeeper, or recursively delete files. Preserve
+  the current and staged bundles, report the exact target and command, and wait
+  for the user's approval or local authorization.
+- After installation, verify the installed bundle's strict code signature and
+  compare only the staged and installed core executable and service payloads
+  with `cmp`. Do not make full inventories, dependency scans, or platform
+  checks recurring installation gates.
+- Treat installation and relaunch as separate outcomes. After an authorized
+  relaunch, verify one app-owned service and a normal status response.
+- Rollback and cleanup must not permanently delete the prior bundle. A
+  post-install optional diagnostic failure must be reported separately and
+  must not undo an otherwise completed installation.
+
 ## Document Page Standards
 
 - For a net-new Word document or Google Docs-targeted DOCX, use A4 portrait (210 x 297 mm) when the user, project policy, or controlling template does not specify another page size. A library, preset, or application default of US Letter is not a sufficient reason to use Letter.
