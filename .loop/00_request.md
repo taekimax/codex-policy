@@ -2,16 +2,16 @@
 
 ## Raw Request
 
-Add concise Google Docs/Slides language, font, size, native-readback, and render-QA invariants to `global/AGENTS.md`; add a uniquely named managed `google-workspace-artifact-qa` skill without modifying official plugin caches; update inventory and acceptance coverage; validate, install live, commit, and push.
+Update the portable Codex policy using recent personal-project lessons as review input. Inspect the current repository and related project evidence independently, add only missing policy, remove stale or duplicate requirements and broken references, and verify consistency.
 
 ## User Intent
 
-Prevent Korean font substitution, locale drift, and A4-versus-16:9 mistakes. Make final QA read/export-only by default, fail closed on unsupported or unobservable required properties, and require native PDF export plus full-page rendering before pass.
+Keep implementation and verification proportional to concrete risk. Avoid mandatory Loop records, fixed planner/generator/evaluator roles, repeated same-boundary artifact attestation, and broad audits for reversible work while retaining authority, data-loss, atomic-write, secret, external-action, and recovery safeguards.
 
 ## Authority
 
-Repository implementation, local verification, live policy and skill installation, commit, and push are explicitly authorized. Preserve unrelated user work and do not modify official plugin caches.
+Repository policy and documentation edits, the normal core-policy plan/apply/verify workflow, a local commit, and push to the verified public SSH `origin/main` are authorized. Preserve unrelated work and do not reconcile the separately gated plugin policy.
 
 ## Date Created
 
-2026-08-10
+2026-08-21

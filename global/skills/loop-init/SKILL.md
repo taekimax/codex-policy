@@ -74,8 +74,10 @@ The helper may create or update exactly one section bounded by:
 
 It rejects zero-or-more-than-one unmatched or duplicate marker pair before writing anything. Existing non-managed content is preserved. Any existing file that changes, including `AGENTS.md`, is backed up under `.loop/backups/<timestamp>/`.
 
-The managed guidance makes loop records optional and task-scoped: it asks an agent to use the smallest useful durable record and to use planners, generators, or evaluators only when their expected value justifies their cost. It does not grant authority for an otherwise-unapproved write.
+The managed guidance makes loop records optional and task-scoped: it asks an agent to use the smallest useful durable record and to use a specialist only when the expected value justifies the cost. It does not grant authority for an otherwise-unapproved write.
+
+The standard files are available record slots, not mandatory gates. Keep current request, contract, plan, and status separate from historical decisions, evaluations, hashes, and logs; superseded requirements must not remain active merely because they were recorded earlier.
 
 ## Next Action
 
-For a loop-backed task, fill the request, specification, contract, and plan with task-specific facts before implementation. Keep progress, decisions, and logs concise and current; do not create ceremony for a small task.
+For a loop-backed task, update only the active records needed to resume safely. Keep current requirements concise, retain history as evidence rather than authority, and do not create ceremony for a small task.

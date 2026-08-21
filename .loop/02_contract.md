@@ -2,27 +2,25 @@
 
 ## Objective
 
-Add a fail-closed, read-only final QA layer without expanding configuration, credential, or official-plugin ownership.
+Publish a concise, general policy refinement without expanding configuration or external authority.
 
 ## Constraints
 
-- Keep global guidance concise and API-neutral; keep field-level checks in the QA skill.
-- Default Korean font to `Noto Sans KR`, while allowing a user-selected Google-supported alternative.
-- Treat Arial, unexpected or unresolved fonts, locale mismatch, and physical-size mismatch as errors.
-- Never pass without native PDF export and inspection of every rendered page or slide.
-- Do not mutate a target Google file unless a separate repair request authorizes it.
+- Preserve unrelated work and the existing public-repository ownership boundary.
+- Keep global guidance project-neutral and avoid duplicating already adequate rules.
+- Preserve data-loss prevention, atomic writes, secret protection, authorization checks, and practical recovery.
+- Treat historical project evidence as review input, not as authority for global implementation details.
+- Do not change plugins or modify the related project. Commit and push only this reviewed policy change to the verified public SSH `origin/main`.
 
 ## Verification
 
-- `quick_validate.py global/skills/google-workspace-artifact-qa`
-- focused acceptance coverage and `python3 tests/test_acceptance.py`
-- `./bin/codex-policy audit-repo` and `git diff --check`
-- core policy plan/apply/verify plus skills-policy verification
-- exact source/live byte and mode comparison for the two managed skill files
-- Git identity, remote visibility, commit, push, and final remote parity
+- Focused text/reference review and `git diff --check`.
+- `python3 tests/test_acceptance.py` because the reviewed policy and skill hashes are repository acceptance contracts.
+- `./bin/codex-policy audit-repo`.
+- Core policy plan, `apply --yes`, and verify; separately report plugin-policy drift without applying it.
+- Verify Git identity, SSH origin, public visibility, remote ancestry, intended diff, commit, push, and final local/tracking/remote parity.
 
 ## Stop Conditions
 
-- A required check would require modifying official plugin cache contents.
-- Public audit, installer rollback/scope guarantees, or live verification cannot be preserved.
-- The target Git identity, remote, or public visibility does not match the approved repository.
+- The change would weaken a concrete authority, data-preservation, secret, or recovery boundary.
+- A required write would expand beyond the core policy workflow or touch unrelated user work.

@@ -39,3 +39,21 @@ Append decision records below. Do not rewrite prior decisions unless correcting 
 - Reason: Locale and page-size defects cannot be safely hidden through partial text edits or export scaling.
 - Alternatives Considered: Best-effort pass with warnings; automatic target mutation during QA.
 - Reversal Condition: Narrow the rule only if the native APIs gain authoritative read/write support and the user separately authorizes repair.
+
+- Date: 2026-08-21
+- Decision: Replace the fixed complex-work orchestrator and delegation default with an expected-value choice between direct execution and orchestration.
+- Reason: Task length or agent count alone does not justify separate planner, generator, evaluator, or re-review roles; concrete coordination or consequential-review value must justify their cost.
+- Alternatives Considered: Keep the mandatory orchestrator wording; require independent evaluation for every completion candidate.
+- Reversal Condition: Add a mandatory role only for a specific workflow with evidence that self-review cannot reliably detect a costly failure.
+
+- Date: 2026-08-21
+- Decision: Keep current request, contract, plan, and status separate from historical decisions, evaluations, hashes, and completed logs.
+- Reason: Completed-task evidence was occupying active Loop files and could carry superseded gates into unrelated work.
+- Alternatives Considered: Preserve every prior task in the active files; delete all historical evidence.
+- Reversal Condition: Retain an older requirement as active only when the current user request or policy explicitly adopts it.
+
+- Date: 2026-08-21
+- Decision: Publish the completed policy refinement to the verified public SSH `origin/main` after rerunning the repository release gates.
+- Reason: The user separately authorized system application, commit, and push after the source and live policy had already passed focused verification.
+- Alternatives Considered: Leave the verified change uncommitted; reconcile the unrelated plugin-policy drift before publication.
+- Reversal Condition: Stop publication if identity, remote visibility, ancestry, final gates, or push destination do not match the repository contract.

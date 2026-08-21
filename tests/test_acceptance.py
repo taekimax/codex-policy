@@ -1213,6 +1213,9 @@ raise SystemExit(2)
         self.assertTrue((project / ".loop" / "03_plan.md").is_file())
         agents = (project / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIn("Optional Loop Workspace", agents)
+        self.assertIn("remove superseded requirements from active files", agents)
+        self.assertIn("historical evidence rather than current gates", agents)
+        self.assertNotIn("planner, generator, evaluator", agents)
         self.assertNotIn("For non-trivial work", agents)
 
         malformed = self.scratch / "loop-malformed"
@@ -1833,9 +1836,16 @@ raise SystemExit(2)
         self.assertIn("Use subagents for independent, separable work", policy_text)
         self.assertIn("The main agent integrates and verifies the results", policy_text)
         self.assertIn("Give each file or external destination one concurrent writer", policy_text)
-        self.assertIn("make the main session the orchestrator", policy_text)
-        self.assertIn("delegate independent detail work to subagents", policy_text)
+        self.assertIn("choose direct execution or orchestration by expected value", policy_text)
+        self.assertIn("Do not require separate planner, generator, evaluator", policy_text)
+        self.assertNotIn("make the main session the orchestrator", policy_text)
+        self.assertNotIn("delegate independent detail work to subagents", policy_text)
         self.assertIn("authoritative, file-backed plan or ledger", policy_text)
+        self.assertIn("do not create or maintain it solely because", policy_text)
+        self.assertIn("Keep active instructions, contracts, plans, and status distinct", policy_text)
+        self.assertIn("Documentation and other\n  readily reversible changes", policy_text)
+        self.assertIn("Within one successful process on one trusted machine", policy_text)
+        self.assertIn("retaining practical recovery paths", policy_text)
         self.assertIn("one short, self-contained, copy-paste-ready block", policy_text)
         self.assertIn("Preserve the receiving agent's execution judgment", policy_text)
         self.assertNotIn("### Model routing", policy_text)
@@ -1856,7 +1866,7 @@ raise SystemExit(2)
         self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
         self.assertEqual(
             digest(GLOBAL_POLICY.read_bytes()),
-            "d0ee7d99274c40c4354232753b5f4e403be954a2eb9a225597b82d1589d438dd",
+            "75f2d0c2ff23dfc591a4d174e3a24aba1913da08b52c3c9499b4582be3ca5e66",
         )
         self.assertEqual(
             digest(OFFICIAL_SKILLS.read_bytes()),
@@ -1873,9 +1883,9 @@ raise SystemExit(2)
         self.assertEqual(
             {relative: digest((LOOP_INIT_SKILL / relative).read_bytes()) for relative in LOOP_INIT_FILES},
             {
-                "SKILL.md": "28470b3a1a35580b353429464833cf73bf99eea25bfe012089a2197949f77556",
+                "SKILL.md": "cd15dfba9eebd6734f88bfe69aa9fde00f7f81f8c480b01148cd7eeed8f8b849",
                 "agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
-                "scripts/init_loop.py": "01db0e4ed1c3273cb4d65d0e387ca25d218a57bad75e04c9d838ced7beb72e94",
+                "scripts/init_loop.py": "47a861faa143199143db89879b4a7a8ef20fad7b1dfb9c1e7950a667a3826bbf",
             },
         )
         self.assertEqual(

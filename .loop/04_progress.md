@@ -6,20 +6,20 @@ Complete
 
 ## Completed
 
-- Confirmed a clean `main == origin/main` checkout and SSH origin.
-- Read the repository workflow, prior loop state, managed-skill installer and inventory structure, and current policy plans.
-- Read `skill-creator` plus the official Google Docs, Google Slides, and Presentations skill contracts without modifying plugin caches.
-- Initialized and drafted `google-workspace-artifact-qa` with a read-only native-readback, effective-font, PDF-export, and full-render gate.
-- Added the concise global Google Workspace artifact invariants and began installer, inventory, documentation, and acceptance integration.
-- Passed the skill validator, all 42 acceptance tests, repository audit, and staged diff check.
-- Forward-tested the reproduction deck read-only: native locale, 16:9 geometry, and Arial defects were detected; incomplete PDF page-box/render evidence correctly prevented PASS. Added speaker notes and notes-master text explicitly to the all-runs font scope.
-- Applied both live policy workflows and verified clean transactions, current managed sources, and source/live byte and mode parity.
-- Published implementation commit `58f1b1d` to public SSH origin `taekimax/codex-policy` on `main`.
+- Confirmed the policy checkout was clean before edits and the core policy baseline was current.
+- Read the repository workflow, deployable policy, Loop Init source, current Loop records, and reviewed-hash acceptance contract.
+- Inspected related project guidance and the relevant dirty diff read-only, preserving all user changes.
+- Confirmed most requested principles already existed and limited changes to the remaining continuity, orchestration, and local-attestation gaps.
+- Updated the deployable policy, repository Loop guidance, reviewed Loop Init source, README, and active Loop records.
+- Updated semantic acceptance assertions and reviewed hashes for the changed deployable policy and Loop Init files.
+- Passed all 50 acceptance tests, repository audit, `git diff --check`, and generated Loop managed-section parity.
+- Applied the core policy transactionally; final verification reports current global policy, managed config, and vendored user skills with a clean transaction.
+- Left the separately gated plugin policy unchanged; its pre-existing `skill_disables` drift remains a distinct failed diagnostic while vendored user skills report current.
 
 ## Next Step
 
-Start a new Codex session to load the updated global policy and discover `google-workspace-artifact-qa`.
+Publish the completed change to the verified public `origin/main`, then start a new Codex session to load the updated global guidance.
 
 ## Last Updated
 
-2026-08-10
+2026-08-21

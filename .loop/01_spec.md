@@ -2,24 +2,27 @@
 
 ## Objective
 
-Manage a portable Google Workspace artifact QA policy and skill that catch locale, effective-font, page-mode, physical-size, and rendered-output defects.
+Refine the deployable policy so optional support, durable records, and verification effort scale with actual consequence and reversibility.
 
 ## Scope
 
-- Add only common pre-authoring and post-conversion invariants to `global/AGENTS.md`.
-- Add `global/skills/google-workspace-artifact-qa/{SKILL.md,agents/openai.yaml}` as an exact reviewed source.
-- Extend the core installer, official inventory, cross-verification, public audit allowlist and hashes, README, and acceptance suite.
-- Apply and verify the reviewed global policy and skill in the live Codex home, then publish the repository change.
+- Remove the global default that complex or long-running work must use an orchestrator and delegated detail roles.
+- Make durable file-backed state conditional on real resumption or coordination risk.
+- Separate active contracts and status from historical logs, evaluations, hashes, and completed-task evidence.
+- Add a concise boundary against immediate repeated attestation of a freshly produced local candidate.
+- Make focused checks the default for documentation and readily reversible changes; reserve broad audits and independent evaluation for justified consequential boundaries.
+- Align the repository Loop guidance, reviewed Loop Init source, README, acceptance assertions, and reviewed hashes.
 
 ## Out of Scope
 
-- Modifying official `google-docs`, `google-slides`, or `presentations` plugin caches.
-- Automatically repairing Google files during QA.
-- Adding credentials, API permissions, marketplace ownership, or a Google-specific runtime client.
+- Copying project-specific implementation rules into the global policy.
+- Changing related project source or user-owned diffs.
+- Changing credentials, permissions, marketplaces, plugin enablement, or unrelated reviewed skills.
 
 ## Acceptance
 
-- Korean locale and Google-supported font rules, A4 dimensions, 16:9 rejection for A4, native readback, native PDF export, and all-page render verification are explicit.
-- Slides resolves every text run through inherited styles; Docs checks PAGES/PAGELESS, geometry, margins, and effective fonts.
-- Managed install and drift detection cover both QA skill files.
-- Skill validation, acceptance, repository audit, live plan/apply/verify, diff checks, and source/live parity pass.
+- Existing proportional-verification and safety rules remain intact without duplicate sections.
+- No policy requires fixed specialist roles or treats superseded records as current authority.
+- Local repeated verification is required only at a meaningful trust, restart, recovery, or irreversible-action boundary.
+- Root and deployable guidance, Loop Init output, README, tests, and reviewed hashes agree.
+- Focused diff/reference checks, acceptance tests, repository audit, and the core policy apply/verify workflow pass.

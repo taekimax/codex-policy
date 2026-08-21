@@ -41,9 +41,11 @@ Completion requires real verification appropriate to the task. Review the final 
 
 ## Context and Continuity
 
-For extended, resumable, multi-agent, or handoff-driven work, use established project conventions to keep one concise, authoritative, file-backed plan or ledger. Maintain the current objective, scope and authority, decisions, work-package ownership and status, changed paths, evidence, verification, unresolved risks or blockers, and next step. Update it promptly after a material decision, subagent handoff, integration, or verification result.
+For work whose resumption or coordination risk justifies durable state, use established project conventions to keep one concise, authoritative, file-backed plan or ledger. Record only the current objective, scope and authority, decisions, status, evidence, blockers, and next step needed to resume safely. Update it after material changes; do not create or maintain it solely because a task is long-running or uses multiple agents.
 
-Treat chat context, generated summaries, and memory as navigation aids rather than the sole authority. At a new session, compaction, handoff, or resumption, reread the current user request and active instructions, then inspect the durable project records, current Git/worktree state, current diff, and latest test evidence before editing, delegating, or retrying. Revalidate drift-prone facts instead of carrying them forward as current.
+Treat chat context, generated summaries, and memory as navigation aids rather than the sole authority. At a new session, compaction, handoff, or resumption of such work, reread the current user request and active instructions, then inspect the relevant durable records and current worktree, diff, and test evidence before relying on earlier status. Revalidate drift-prone facts instead of carrying them forward as current.
+
+Keep active instructions, contracts, plans, and status distinct from historical logs, prior evaluations, and completed-task evidence. When a requirement is superseded, remove it from active records or label it historical; do not carry its gates, hashes, or conclusions forward unless the current request or active policy adopts them.
 
 Keep context bounded. Load the smallest complete set of relevant artifacts, prefer concise handoffs and file-backed evidence over repeated broad scans or long log dumps, and avoid reloading already-established state unless it may have changed or conflicts with new evidence.
 
@@ -80,6 +82,11 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
   exceptional cases that must stop, preserve data, or require operator input.
   Keep exhaustive adversarial, platform-specific, and internal-event tests
   separate from the normal acceptance gate unless explicitly required.
+- Match verification to consequence and reversibility. Documentation and other
+  readily reversible changes normally need focused diff, reference, and output
+  checks. Reserve full suites, package or platform audits, and independent
+  evaluation for explicit requirements or concrete release, database cutover,
+  shared-data, authentication, security, or hard-to-reverse risk.
 - Prefer observable behavior over internal choreography. Mocks and fakes may
   test narrow units, but must not require an idealized sequence the user-facing
   contract never promised.
@@ -92,9 +99,16 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
 - Preserve partial evidence. Use fixed, non-secret stage labels to identify
   the last completed step, and do not collapse a post-success save or cleanup
   issue into an unrelated authentication or network failure.
+- Within one successful process on one trusted machine, validate a newly
+  produced completion candidate at its meaningful boundary, then do not
+  immediately freeze, rehash, reopen, or revalidate the same bytes without a
+  plausible mutation or recovery failure. Revalidate when crossing a trust or
+  machine boundary, resuming after interruption, or controlling an
+  irreversible or external action.
 - Keep security proportional, not absent. Continue protecting secrets,
   refusing unknown human challenges, preventing destructive or external
-  actions without authority, and preserving atomic writes. Do not add
+  actions without authority, preventing data loss, preserving atomic writes,
+  and retaining practical recovery paths. Do not add
   production-grade hardening, exhaustive fault injection, or zero-risk
   assumptions to a local or personal workflow unless the actual risk or user
   requirement justifies it.
@@ -156,7 +170,7 @@ Do not prescribe implementation steps, tool choices, subagent decomposition, ver
 
 Use subagents for independent, separable work when they materially improve speed, quality, or main-context focus. Give each subagent a bounded objective and expected output. The main agent integrates and verifies the results. Give each file or external destination one concurrent writer.
 
-For complex or long-running work, make the main session the orchestrator. Keep it focused on scope, architecture, risk control, integration, and final verification, and delegate independent detail work to subagents. Require compact subagent handoffs that report changed paths, behavior, exact tests and results, unresolved risks, and requested interface changes; incorporate material handoff state into the authoritative file-backed plan or ledger before relying on it later.
+For complex or long-running work, choose direct execution or orchestration by expected value. Do not require separate planner, generator, evaluator, or independent re-review roles by default. When delegation is useful, keep integration and final verification with the main session, use compact evidence-bearing handoffs, and record them durably only when later resumption depends on them.
 
 ## GitHub
 

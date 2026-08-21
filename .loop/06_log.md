@@ -61,3 +61,21 @@ Use `## YYYY-MM-DD HH:mm | role | title` headings. Record meaningful task events
 - Applied the core policy and separately gated skills policy; both final verifies reported clean transactions, current vendored skills, and `verified=passed`.
 - Confirmed byte-identical mode-0644 live copies of the global policy and both QA skill files.
 - Published implementation commit `58f1b1d` to the public SSH `main` branch after Git identity, repository visibility, ancestry, and dry-run push checks.
+
+## 2026-08-21 | coordinator | Risk-proportional policy refinement started
+
+- Replaced stale active Loop task records with the current policy objective while retaining the append-only decision and operational history.
+- Confirmed the deployable policy already contained most requested proportionality and safety rules.
+- Limited source edits to optional orchestration, active-versus-historical continuity, local completion-candidate attestation, and aligned Loop guidance.
+
+## 2026-08-21 | coordinator | Risk-proportional policy refinement verified
+
+- Passed 50 acceptance tests, the public repository audit, diff checks, and exact generated Loop managed-section parity.
+- Applied and verified the core policy with a clean transaction and current managed policy plus vendored user skills.
+- Kept the separately gated plugin policy unchanged; its existing skill-disable drift remained distinct from the successful core policy update.
+- Made no commit or push.
+
+## 2026-08-21 | coordinator | Policy publication authorized
+
+- The user separately authorized system application, commit, and push.
+- Reopened only the publication lane: final repository gates, identity and destination checks, one local commit, and push to the verified public SSH `origin/main`.

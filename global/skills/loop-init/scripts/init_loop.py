@@ -45,9 +45,10 @@ Use `.loop/` only for work that benefits from durable, resumable project records
 `.loop/` records complement the current user request, repository guidance, source, and test evidence; it does not override any of them or authorize an otherwise-unapproved action.
 
 For loop-backed work:
-- keep the request, specification, contract, plan, progress, decisions, and log concise and task-specific
+- keep active request, contract, plan, and status records concise and current; remove superseded requirements from active files
+- treat prior decisions, evaluations, hashes, and completed-task logs as historical evidence rather than current gates
 - keep changes within the active contract and record meaningful decisions or blockers
-- use a planner, generator, evaluator, or another specialist only when its expected value justifies the coordination cost
+- create or update only the durable records needed to resume safely, and use specialists only when their expected value justifies the coordination cost
 - verify completion against the current request and available evidence
 - never record secrets, credentials, or private configuration
 {MANAGED_END}"""
@@ -179,7 +180,7 @@ def templates() -> Dict[str, str]:
 
 ## Operating Rule
 
-Use the smallest useful record for the active task. Do not store secrets, credentials, or private configuration.
+Use the smallest useful record for the active task. Keep active requirements and status separate from historical decisions, evaluations, hashes, and logs. Do not store secrets, credentials, or private configuration.
 """,
         "00_request.md": f"""# Request
 

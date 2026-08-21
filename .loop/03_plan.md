@@ -2,19 +2,19 @@
 
 ## Outcome
 
-Publish and deploy a managed Google Workspace Artifact QA skill and the corresponding portable global invariants.
+Update, deploy, commit, and publish a smaller risk-proportional global workflow policy.
 
 ## Steps
 
-1. Inspect the clean checkout, README, existing managed-skill implementation, official authoring skills, and current read-only policy plans.
-2. Create the skill with the standard initializer and implement the read-only QA contract.
-3. Update global policy, project documentation, inventory, installers, audit allowlists and reviewed hashes, and acceptance coverage.
-4. Validate the skill, run focused and full local gates, and forward-test the QA behavior against a realistic converted Slides case.
-5. Review the exact diff, apply the core policy and managed skill live, and verify source/live parity plus skills-policy state.
-6. Verify Git identity, SSH remote and public visibility; commit, push, refetch, and confirm local/remote parity.
+1. Inspect current policy, repository history, Loop records, related project guidance, and relevant user-owned diff.
+2. Identify only missing or contradictory global rules.
+3. Refine global continuity, verification, local-artifact, safety, and subagent language; align Loop guidance and tests.
+4. Review the exact diff and references, update reviewed hashes, and run repository acceptance and audit gates.
+5. Apply and verify the core policy, then report separately gated plugin-policy drift without changing it.
+6. Verify Git identity, SSH remote, public visibility, and remote ancestry; commit, push, refetch, and prove parity.
 
 ## Risks
 
-- Inherited text styles can hide Arial substitution unless every effective font is resolved.
-- Google APIs may expose required root properties as read-only; the skill must fail rather than imply repair.
-- Hash-pinned public audit data must be updated only after the reviewed artifacts are final.
+- Over-generalizing one project's workflow could weaken valid release or data-boundary checks.
+- Leaving old exact-string assertions or reviewed hashes would create broken policy references.
+- Updating completed Loop task files without preserving decision and log history could confuse evidence with authority.

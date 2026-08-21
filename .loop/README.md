@@ -6,4 +6,4 @@
 
 ## Operating Rule
 
-Use only the records relevant to the active task. Do not store secrets, credentials, or private configuration. Specialist roles are optional and must earn their coordination cost.
+Use only the smallest record needed for the active task. Files `00_request.md` through `04_progress.md` describe current work; keep them current and remove superseded requirements. Decisions and logs are historical evidence, not current authority or automatic acceptance gates. Do not store secrets, credentials, or private configuration. Specialist roles are optional and must earn their coordination cost.
