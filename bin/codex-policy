@@ -228,7 +228,7 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_file.py",
 }
 REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "75f2d0c2ff23dfc591a4d174e3a24aba1913da08b52c3c9499b4582be3ca5e66",
+    "global/AGENTS.md": "fd3d48041ea25ebad32d3ebf947bd9da1a32a1c1831945f517e5f056b4d0ba32",
     "global/official-skills.json": "97f7c1419f3e40a660c3d84381499f53c1da3b3b57a3a4ca5829a96a84fdc6e4",
     "global/skills/google-workspace-artifact-qa/SKILL.md": "e003063c481b6cf6382ea161e94dc6637157afde633233bd83f9fe81a9df0675",
     "global/skills/google-workspace-artifact-qa/agents/openai.yaml": "d7673cfb0254cccc182bb699afe2b67cd732d2a60e2fe634a946e1bd7ddebf88",
