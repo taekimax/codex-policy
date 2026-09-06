@@ -1,39 +1,15 @@
 # Codex Policy Repository
 
-This public repository maintains a portable global Codex policy. `global/AGENTS.md` is the exact deployable policy; `global/config.owned.toml` and `global/owned-keys.txt` define the only configuration values this repository owns; and `global/skills/google-workspace-artifact-qa`, `global/skills/local-document-extraction`, `global/skills/oracle-solver`, and `global/skills/loop-init` are the reviewed public source snapshots installed by the core policy workflow.
+`global/AGENTS.md` is the canonical global instruction file. `global/config.owned.toml` and `global/owned-keys.txt` define the configuration this repository owns. Reviewed user skills live under `global/skills/`; the host's installed copies are deployment targets.
 
-## Operating Rules
+Read `README.md` for the existing deployment workflow. A request to implement and apply policy changes authorizes editing these sources and running `./bin/codex-policy plan`, `apply --yes`, and `verify`. Read-only audit requests remain read-only. Use `./bin/codex-skills-policy` only for requested skill/plugin reconciliation; inspect its plan because it may include unrelated marketplace changes.
 
-- Read `README.md`, then use `./bin/codex-policy` for core policy work and `./bin/codex-skills-policy` for the separately gated skill/plugin policy. Both default commands are read-only plans.
-- Treat diagnose, review, and plan requests as read-only. When the user explicitly asks to install or update, run `plan`, then `apply --yes`, then `verify`.
-- Never copy the live Codex home into this repository. The reviewed skill mirrors are `global/skills/google-workspace-artifact-qa`, `global/skills/local-document-extraction`, `global/skills/oracle-solver`, and `global/skills/loop-init`; `codex-policy apply --yes` is the explicit authorization to synchronize only their declared files after source-level validation. Do not open, print, log, or export raw authentication, session, cache, history, backup, trust, or configuration state; let the policy tool parse target configuration privately.
-- Preserve every target configuration value outside `global/owned-keys.txt` and the exact logical `skills.config` entries declared in `global/official-skills.json`. Never add ownership of permissions, sandboxing, approvals, project trust, credentials, arbitrary paths, marketplaces, UI state, or runtime fingerprints without explicit user direction and a security review.
-- Keep repo-root instructions separate from the byte-exact deployable `global/AGENTS.md`. Do not add a repo `.codex/config.toml`, automatic reverse-sync, or networked install step.
-- This repository is public. Before any commit or push, run `python3 tests/test_acceptance.py` and `./bin/codex-policy audit-repo`, inspect the intended diff and Git identity, and verify the exact remote and visibility.
-- A successful global-file update is visible to newly started Codex sessions. Tell the user to start a new session after `verify` passes.
+Preserve configuration outside the declared ownership and unrelated user work. Do not import private live configuration, credentials, sessions, or backups into this public repository. Keep repository guidance separate from the global payload, and avoid reverse-sync or a second deployment mechanism.
 
-## Practical Implementation
+Keep core deployment portable across macOS and Windows. When retiring a previously managed file, preserve its transaction target name and use the existing backup, apply, and recovery path so updating an older host reaches the same state as a fresh install. Retain unknown local files and keep optional runtime provisioning separate from policy deployment.
 
-- Start with the smallest end-to-end solution that works.
-- Remove obsolete paths instead of adding compatibility layers, fallbacks, or speculative abstractions.
-- Add one capability at a time without breaking the working product.
-- Keep modules focused and check existing dependencies before writing or adding code.
-- Avoid temporary stopgaps; choose designs that can remain in use.
+Use focused checks for documentation and relevant installer checks for deployment changes. Before an authorized commit or push, run the existing acceptance suite and repository audit, inspect the intended diff, and verify Git identity and destination. Publication requires current authorization; old task records do not supply it.
 
----
-<!-- BEGIN MODEL LOOP POLICY -->
-## Optional Loop Workspace
+The `.loop/README.md` file records the latest policy audit. Other files in `.loop/` are historical evidence, not active instructions. There is no global Loop workflow or required record structure.
 
-Use `.loop/` only for work that benefits from durable, resumable project records. Read the minimum relevant files before continuing a loop-backed task.
-
-`.loop/` records complement the current user request, repository guidance, source, and test evidence; it does not override any of them or authorize an otherwise-unapproved action.
-
-For loop-backed work:
-- keep active request, contract, plan, and status records concise and current; remove superseded requirements from active files
-- treat prior decisions, evaluations, hashes, and completed-task logs as historical evidence rather than current gates
-- keep changes within the active contract and record meaningful decisions or blockers
-- create or update only the durable records needed to resume safely, and use specialists only when their expected value justifies the coordination cost
-- verify completion against the current request and available evidence
-- never record secrets, credentials, or private configuration
-<!-- END MODEL LOOP POLICY -->
----
+Global guidance and skill discovery refresh in a new Codex session. Tell the user when verified live changes require that refresh.

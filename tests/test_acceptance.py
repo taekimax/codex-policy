@@ -34,10 +34,6 @@ SCRIPT = REPO / "bin" / "codex-policy"
 SKILLS_SCRIPT = REPO / "bin" / "codex-skills-policy"
 GLOBAL_POLICY = REPO / "global" / "AGENTS.md"
 OFFICIAL_SKILLS = REPO / "global" / "official-skills.json"
-ORACLE_SKILL = REPO / "global" / "skills" / "oracle-solver"
-ORACLE_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/run_oracle.py")
-LOOP_INIT_SKILL = REPO / "global" / "skills" / "loop-init"
-LOOP_INIT_FILES = ("SKILL.md", "agents/openai.yaml", "scripts/init_loop.py")
 GOOGLE_WORKSPACE_QA_SKILL = REPO / "global" / "skills" / "google-workspace-artifact-qa"
 GOOGLE_WORKSPACE_QA_FILES = ("SKILL.md", "agents/openai.yaml")
 LOCAL_DOCUMENT_SKILL = REPO / "global" / "skills" / "local-document-extraction"
@@ -178,7 +174,7 @@ raise SystemExit(2)
         )
         if os.name == "nt":
             launcher = fake_bin / "codex.cmd"
-            launcher.write_text('@python "%~dp0codex_fixture.py" %*\n', encoding="utf-8")
+            launcher.write_text('@"{}" "%~dp0codex_fixture.py" %*\n'.format(sys.executable), encoding="utf-8")
         else:
             executable.chmod(0o755)
         sources = self.scratch / "plugin-sources"
@@ -258,20 +254,6 @@ raise SystemExit(2)
         policy.parent.mkdir(parents=True, exist_ok=True)
         policy.write_text("policy:\n  allow_implicit_invocation: true\n", encoding="utf-8")
 
-    def write_current_oracle(self) -> None:
-        target = self.home / "skills" / "oracle-solver"
-        for relative in ORACLE_FILES:
-            destination = target / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(ORACLE_SKILL / relative, destination)
-
-    def write_current_loop_init(self) -> None:
-        target = self.home / "skills" / "loop-init"
-        for relative in LOOP_INIT_FILES:
-            destination = target / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(LOOP_INIT_SKILL / relative, destination)
-
     def write_current_google_workspace_qa(self) -> None:
         target = self.home / "skills" / "google-workspace-artifact-qa"
         for relative in GOOGLE_WORKSPACE_QA_FILES:
@@ -310,8 +292,6 @@ raise SystemExit(2)
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual((self.home / "AGENTS.md").read_bytes(), GLOBAL_POLICY.read_bytes())
         for source_root, files, destination_name in (
-            (ORACLE_SKILL, ORACLE_FILES, "oracle-solver"),
-            (LOOP_INIT_SKILL, LOOP_INIT_FILES, "loop-init"),
             (GOOGLE_WORKSPACE_QA_SKILL, GOOGLE_WORKSPACE_QA_FILES, "google-workspace-artifact-qa"),
             (LOCAL_DOCUMENT_SKILL, LOCAL_DOCUMENT_FILES, "local-document-extraction"),
         ):
@@ -321,6 +301,8 @@ raise SystemExit(2)
                 self.assertEqual(destination.read_bytes(), source.read_bytes())
                 if os.name != "nt":
                     self.assertEqual(stat.S_IMODE(destination.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
+        self.assertFalse((self.home / "skills" / "loop-init").exists())
+        self.assertFalse((self.home / "skills" / "oracle-solver").exists())
         config = (self.home / "config.toml").read_text(encoding="utf-8")
         self.assertIn("max_threads = 6", config)
         self.assertIn("max_depth = 1", config)
@@ -339,6 +321,111 @@ raise SystemExit(2)
         self.assertIn("result: none", second.stdout)
         self.assertEqual((self.home / "config.toml").read_bytes(), before)
         self.assertEqual(self.transaction_directories(), transactions)
+
+    def seed_retired_skill_files(self) -> Dict[Path, bytes]:
+        retired = {}
+        for skill, helper in (("loop-init", "init_loop.py"), ("oracle-solver", "run_oracle.py")):
+            for relative in ("SKILL.md", "agents/openai.yaml", "scripts/" + helper):
+                path = self.home / "skills" / skill / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                content = ("local edited copy: " + skill + "/" + relative + "\n").encode("utf-8")
+                path.write_bytes(content)
+                retired[path] = content
+        return retired
+
+    def test_core_retirement_backs_up_local_edits_preserves_extras_and_is_idempotent(self) -> None:
+        initial = self.run_policy("apply", "--yes")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        config_path = self.home / "config.toml"
+        config = config_path.read_bytes() + b'\n[personal]\nkeep = "local setting"\n'
+        config_path.write_bytes(config)
+        retired = self.seed_retired_skill_files()
+        extra = self.home / "skills" / "loop-init" / "personal-notes.txt"
+        extra.write_bytes(b"keep this unrelated local file\n")
+        transactions = set(self.transaction_directories())
+
+        plan = self.run_policy("plan", "--json")
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertEqual(json.loads(plan.stdout)["retired_user_skills"], "present")
+        self.assertTrue(all(path.exists() for path in retired))
+        applied = self.run_policy("apply", "--yes")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertTrue(all(not path.exists() for path in retired))
+        self.assertEqual(extra.read_bytes(), b"keep this unrelated local file\n")
+        self.assertEqual(config_path.read_bytes(), config)
+        added = set(self.transaction_directories()) - transactions
+        self.assertEqual(len(added), 1)
+        transaction = added.pop()
+        self.assertEqual({path.read_bytes() for path in transaction.glob("*.before")}, set(retired.values()))
+        verified = self.run_policy("verify", "--json")
+        self.assertEqual(verified.returncode, 0, verified.stderr)
+        self.assertEqual(json.loads(verified.stdout)["retired_user_skills"], "absent")
+        transactions = self.transaction_directories()
+        second = self.run_policy("apply", "--yes")
+        self.assertEqual(second.returncode, 0, second.stderr)
+        self.assertIn("result: none", second.stdout)
+        self.assertEqual(self.transaction_directories(), transactions)
+
+    def test_core_retirement_rollback_and_interrupted_recovery_restore_local_edits(self) -> None:
+        initial = self.run_policy("apply", "--yes")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        retired = self.seed_retired_skill_files()
+        failed = self.run_policy("apply", "--yes", extra_environment={"CODEX_POLICY_TEST_FAIL_AFTER": "1"})
+        self.assertEqual(failed.returncode, 2, failed.stderr)
+        self.assertEqual({path: path.read_bytes() for path in retired}, retired)
+        transactions = set(self.transaction_directories())
+        applied = self.run_policy("apply", "--yes")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        transaction = (set(self.transaction_directories()) - transactions).pop()
+        journal_path = transaction / "state.json"
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+        # Reproduce interruption after the deletions and before the completion marker.
+        journal["state"] = "applying"
+        journal_path.write_text(json.dumps(journal), encoding="utf-8")
+        preview = self.run_policy("recover")
+        self.assertEqual(preview.returncode, 0, preview.stderr)
+        self.assertIn("required", preview.stdout)
+        self.assertTrue(all(not path.exists() for path in retired))
+        recovered = self.run_policy("recover", "--apply", "--yes")
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual({path: path.read_bytes() for path in retired}, retired)
+        self.assertEqual(json.loads(journal_path.read_text(encoding="utf-8"))["state"], "recovered")
+
+    def test_legacy_skill_install_transaction_can_recover_before_retirement(self) -> None:
+        initial = self.run_policy("apply", "--yes")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        target = self.home / "skills" / "oracle-solver" / "SKILL.md"
+        target.parent.mkdir(parents=True)
+        before = b"locally edited skill before the old update\n"
+        after = b"skill installed by the old updater\n"
+        target.write_bytes(after)
+        target.chmod(0o644)
+        transaction = self.home / ".codex-policy" / "transactions" / "legacy-install"
+        transaction.mkdir()
+        name = "oracle-solver-instructions"
+        (transaction / (name + ".before")).write_bytes(before)
+        journal = {
+            "schema": 1,
+            "kind": "apply",
+            "state": "applying",
+            "files": {name: {
+                "before_present": True,
+                "before_sha256": digest(before),
+                "after_sha256": digest(after),
+                "before_mode": None if os.name == "nt" else 0o644,
+                "after_mode": None if os.name == "nt" else 0o644,
+            }},
+            "replaced": [name],
+        }
+        (transaction / "state.json").write_text(json.dumps(journal), encoding="utf-8")
+        blocked = self.run_policy("apply", "--yes")
+        self.assertEqual(blocked.returncode, 2)
+        recovered = self.run_policy("recover", "--apply", "--yes")
+        self.assertEqual(recovered.returncode, 0, recovered.stderr)
+        self.assertEqual(target.read_bytes(), before)
+        applied = self.run_policy("apply", "--yes")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        self.assertFalse(target.exists())
 
     def test_unowned_toml_text_and_semantics_are_preserved(self) -> None:
         self.home.mkdir(mode=0o700)
@@ -475,7 +562,8 @@ raise SystemExit(2)
     def test_core_policy_repairs_vendored_skill_content_and_mode_drift(self) -> None:
         initial = self.run_policy("apply", "--yes")
         self.assertEqual(initial.returncode, 0, initial.stderr)
-        target = self.home / "skills" / "loop-init" / "scripts" / "init_loop.py"
+        target = self.home / "skills" / "local-document-extraction" / "scripts" / "extract_ocr.py"
+        source = LOCAL_DOCUMENT_SKILL / "scripts" / "extract_ocr.py"
         target.write_text(target.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
         target.chmod(0o644)
         qa_target = self.home / "skills" / "google-workspace-artifact-qa" / "SKILL.md"
@@ -485,7 +573,6 @@ raise SystemExit(2)
         self.assertEqual(json.loads(plan.stdout)["vendored_user_skills"], "drifted")
         repaired = self.run_policy("apply", "--yes")
         self.assertEqual(repaired.returncode, 0, repaired.stderr)
-        source = LOOP_INIT_SKILL / "scripts" / "init_loop.py"
         self.assertEqual(target.read_bytes(), source.read_bytes())
         self.assertEqual(qa_target.read_bytes(), (GOOGLE_WORKSPACE_QA_SKILL / "SKILL.md").read_bytes())
         if os.name != "nt":
@@ -594,7 +681,6 @@ raise SystemExit(2)
         for skill in ("find-skills", "web-design-guidelines"):
             self.write_skill(Path(environment["HOME"]) / ".agents" / "skills" / skill / "SKILL.md")
         self.write_current_context7()
-        self.write_current_oracle()
         self.home.mkdir(parents=True, exist_ok=True)
         stale = self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills" / "canva-branded-presentation" / "SKILL.md"
         unrelated = self.scratch / "unrelated" / "SKILL.md"
@@ -679,7 +765,7 @@ raise SystemExit(2)
 
     def test_official_skills_disables_retired_codex_home_skills_and_survives_removal(self) -> None:
         environment = self.make_current_skills_environment()
-        retired = ("code-auditor", "feature-implementing", "test-fixing")
+        retired = ("code-auditor", "feature-implementing", "test-fixing", "loop-init", "oracle-solver")
         paths = []
         for skill in retired:
             path = self.home / "skills" / skill / "SKILL.md"
@@ -691,7 +777,7 @@ raise SystemExit(2)
         config = self.home.joinpath("config.toml").read_text(encoding="utf-8")
         for path in paths:
             self.assertIn(toml_path(path), config)
-        self.assertEqual(config.count("enabled = false"), 6)
+        self.assertEqual(config.count("enabled = false"), 3 + len(retired))
 
         for path in paths:
             path.unlink()
@@ -718,7 +804,6 @@ raise SystemExit(2)
         for skill in ("find-skills", "web-design-guidelines"):
             self.write_skill(shared_skills / skill / "SKILL.md")
         self.write_current_context7()
-        self.write_current_oracle()
 
         sources = Path(environment["CODEX_FAKE_SOURCES"])
         configured = [
@@ -842,7 +927,7 @@ raise SystemExit(2)
 
     def test_official_skills_preserves_unrelated_cache_like_path(self) -> None:
         environment = self.make_current_skills_environment()
-        unrelated = Path("/tmp") / "unrelated-policy-fixture" / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "v1" / "skills" / "documents" / "SKILL.md"
+        unrelated = self.scratch / "unrelated-policy-fixture" / "plugins" / "cache" / "openai-primary-runtime" / "documents" / "v1" / "skills" / "documents" / "SKILL.md"
         original_entry = '[[skills.config]]\npath = "{}"\nenabled = true\n'.format(toml_path(unrelated))
         self.home.joinpath("config.toml").write_text(original_entry, encoding="utf-8")
         applied = self.run_skills_policy("apply", "--yes", extra_environment=environment)
@@ -869,8 +954,6 @@ raise SystemExit(2)
         environment = self.make_current_skills_environment()
         self.write_current_context7()
         self.write_current_google_workspace_qa()
-        self.write_current_oracle()
-        self.write_current_loop_init()
         self.write_current_local_document_extraction()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
@@ -890,46 +973,9 @@ raise SystemExit(2)
         self.assertEqual(unreachable.returncode, 1, unreachable.stderr)
         self.assertEqual(json.loads(unreachable.stdout)["retained_external"], "review")
 
-    def test_official_skills_oracle_requires_exact_reviewed_source(self) -> None:
-        environment = self.make_current_skills_environment()
-        self.write_current_context7()
-        self.write_current_google_workspace_qa()
-        self.write_current_oracle()
-        self.write_current_loop_init()
-        self.write_current_local_document_extraction()
-        current = self.run_skills_policy("plan", "--json", extra_environment=environment)
-        self.assertEqual(current.returncode, 0, current.stderr)
-        self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
-
-        runner = self.home / "skills" / "oracle-solver" / "scripts" / "run_oracle.py"
-        runner.write_text(runner.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
-        drifted = self.run_skills_policy("plan", "--json", extra_environment=environment)
-        self.assertEqual(drifted.returncode, 0, drifted.stderr)
-        self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
-        self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
-
-    def test_official_skills_loop_init_requires_exact_reviewed_source(self) -> None:
-        environment = self.make_current_skills_environment()
-        self.write_current_google_workspace_qa()
-        self.write_current_oracle()
-        self.write_current_loop_init()
-        self.write_current_local_document_extraction()
-        current = self.run_skills_policy("plan", "--json", extra_environment=environment)
-        self.assertEqual(current.returncode, 0, current.stderr)
-        self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
-
-        helper = self.home / "skills" / "loop-init" / "scripts" / "init_loop.py"
-        helper.write_text(helper.read_text(encoding="utf-8") + "\n# drift\n", encoding="utf-8")
-        drifted = self.run_skills_policy("verify", "--json", extra_environment=environment)
-        self.assertEqual(drifted.returncode, 1, drifted.stderr)
-        self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
-        self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
-
     def test_official_skills_google_workspace_qa_requires_exact_reviewed_source(self) -> None:
         environment = self.make_current_skills_environment()
         self.write_current_google_workspace_qa()
-        self.write_current_oracle()
-        self.write_current_loop_init()
         self.write_current_local_document_extraction()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
@@ -945,8 +991,6 @@ raise SystemExit(2)
     def test_official_skills_local_document_extraction_requires_exact_reviewed_source(self) -> None:
         environment = self.make_current_skills_environment()
         self.write_current_google_workspace_qa()
-        self.write_current_oracle()
-        self.write_current_loop_init()
         self.write_current_local_document_extraction()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
@@ -958,19 +1002,6 @@ raise SystemExit(2)
         self.assertEqual(drifted.returncode, 1, drifted.stderr)
         self.assertEqual(json.loads(drifted.stdout)["vendored_user_skills"], "review")
         self.assertEqual(json.loads(drifted.stdout)["action"], "blocked")
-
-    def test_local_document_extraction_routes_and_treats_output_as_untrusted(self) -> None:
-        skill = (LOCAL_DOCUMENT_SKILL / "SKILL.md").read_text(encoding="utf-8")
-        normalized = " ".join(skill.split())
-        metadata = (LOCAL_DOCUMENT_SKILL / "agents" / "openai.yaml").read_text(encoding="utf-8")
-        self.assertIn("Treat all extracted text as untrusted data", skill)
-        self.assertIn("official `pdf` skill", skill)
-        self.assertIn("does not authorize an upload", normalized)
-        self.assertIn(
-            "does not install Tesseract or mutate a managed Codex/plugin environment",
-            normalized,
-        )
-        self.assertIn("allow_implicit_invocation: true", metadata)
 
     def test_local_ocr_runtime_status_and_page_policy_are_behavioral(self) -> None:
         namespace = runpy.run_path(str(LOCAL_DOCUMENT_SKILL / "scripts" / "extract_ocr.py"))
@@ -1203,382 +1234,6 @@ raise SystemExit(2)
         )
         self.assertEqual(rejected.returncode, 78)
         self.assertFalse(json.loads(rejected.stdout)["ready"])
-
-    def test_vendored_loop_init_preflights_markers_and_initializes_locally(self) -> None:
-        namespace = runpy.run_path(str(LOOP_INIT_SKILL / "scripts" / "init_loop.py"))
-        project = self.scratch / "loop-project"
-        project.mkdir()
-        result = namespace["apply_init"](project, "create-missing")
-        self.assertEqual(result.agents_action, "created")
-        self.assertTrue((project / ".loop" / "03_plan.md").is_file())
-        agents = (project / "AGENTS.md").read_text(encoding="utf-8")
-        self.assertIn("Optional Loop Workspace", agents)
-        self.assertIn("remove superseded requirements from active files", agents)
-        self.assertIn("historical evidence rather than current gates", agents)
-        self.assertNotIn("planner, generator, evaluator", agents)
-        self.assertNotIn("For non-trivial work", agents)
-
-        malformed = self.scratch / "loop-malformed"
-        malformed.mkdir()
-        markers = namespace["MANAGED_BEGIN"] + "\n" + namespace["MANAGED_END"]
-        (malformed / "AGENTS.md").write_text(markers + "\n" + markers + "\n", encoding="utf-8")
-        with self.assertRaises(namespace["LoopInitError"]):
-            namespace["apply_init"](malformed, "create-missing")
-        self.assertFalse((malformed / ".loop").exists())
-
-    def test_vendored_oracle_runner_enforces_document_only_write_contract(self) -> None:
-        namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
-        response = {
-            "schema_version": "oracle-review-v2",
-            "status": "complete",
-            "verdict": "proceed",
-            "confidence": "high",
-            "answer": "A concise answer.",
-            "question_answers": [
-                {
-                    "question_index": 1,
-                    "answer": "Yes, it is sound.",
-                    "finding_ids": ["F1"],
-                }
-            ],
-            "scope": {"reviewed": ["fixture"], "not_reviewed": []},
-            "findings": [
-                {
-                    "id": "F1",
-                    "severity": "info",
-                    "statement": "The fixture is sound.",
-                    "evidence": ["fixture:1"],
-                    "reasoning": "The contract is explicit.",
-                    "recommendation": "Proceed.",
-                }
-            ],
-            "risks": [],
-            "recommended_next_steps": [
-                {
-                    "order": 1,
-                    "action": "Continue.",
-                    "rationale": "The fixture passed.",
-                    "verification": "Re-run the test.",
-                }
-            ],
-            "assumptions": [],
-            "unknowns": [],
-        }
-        questions = ["Is it sound?"]
-        document = namespace["normalize_document_path"](self.scratch / "review.md")
-        namespace["require_document_in_workspace"](document, self.scratch)
-        rendered = namespace["render_document"](response, questions)
-        document_sha256 = namespace["write_document"](document, rendered)
-        marker = namespace["DOCUMENT_MARKER"]
-        self.assertTrue(document.read_text(encoding="utf-8").startswith(marker + "\n"))
-        self.assertIn("## Question answers", document.read_text(encoding="utf-8"))
-        self.assertEqual(document_sha256, digest(document.read_bytes()))
-        self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
-        handoff = namespace["handoff"](response, document, document_sha256)
-        self.assertEqual(handoff["schema_version"], "oracle-review-handoff-v2")
-        self.assertEqual(handoff["document_path"], str(document))
-        self.assertEqual(handoff["document_sha256"], document_sha256)
-
-        namespace["validate_response"](response, len(questions))
-        incomplete = json.loads(json.dumps(response))
-        incomplete["question_answers"] = []
-        with self.assertRaisesRegex(namespace["OracleError"], "cover every request question"):
-            namespace["validate_response"](incomplete, len(questions))
-        duplicate_finding = json.loads(json.dumps(response))
-        duplicate_finding["findings"].append(dict(duplicate_finding["findings"][0]))
-        with self.assertRaisesRegex(namespace["OracleError"], "finding IDs must be unique"):
-            namespace["validate_response"](duplicate_finding, len(questions))
-        unknown_finding = json.loads(json.dumps(response))
-        unknown_finding["question_answers"][0]["finding_ids"] = ["missing"]
-        with self.assertRaisesRegex(namespace["OracleError"], "unknown finding"):
-            namespace["validate_response"](unknown_finding, len(questions))
-        contradictory = json.loads(json.dumps(response))
-        contradictory["status"] = "blocked"
-        with self.assertRaisesRegex(namespace["OracleError"], "cannot recommend proceeding"):
-            namespace["validate_response"](contradictory, len(questions))
-
-        prior_document = document.read_bytes()
-        with (
-            mock.patch.object(namespace["os"], "replace", side_effect=OSError("fixture")),
-            self.assertRaisesRegex(namespace["OracleError"], "could not be written"),
-        ):
-            namespace["write_document"](document, rendered + "\nreplacement\n")
-        self.assertEqual(document.read_bytes(), prior_document)
-        self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
-        replacement = rendered + "\nReplacement verified.\n"
-        replacement_sha256 = namespace["write_document"](document, replacement)
-        self.assertEqual(document.read_text(encoding="utf-8"), replacement)
-        self.assertEqual(replacement_sha256, digest(document.read_bytes()))
-        self.assertEqual({path.name for path in self.scratch.iterdir()}, {"review.md"})
-
-        unmanaged = self.scratch / "unmanaged.md"
-        unmanaged.write_text("user-owned\n", encoding="utf-8")
-        with self.assertRaises(namespace["OracleError"]):
-            namespace["normalize_document_path"](unmanaged)
-
-        command = namespace["build_command"](
-            "codex", self.scratch, self.scratch / "schema.json", self.scratch / "response.json"
-        )
-        self.assertIn("--search", command)
-        self.assertIn("workspace-write", command)
-        self.assertNotIn("read-only", command)
-        self.assertNotIn("--disable", command)
-        self.assertNotIn("--ignore-user-config", command)
-        self.assertNotIn("mcp_servers={}", command)
-        self.assertNotIn("--strict-config", command)
-        contract = namespace["sanitized_contract"](command, document)
-        self.assertEqual(contract["schema_version"], "oracle-runner-contract-v3")
-        self.assertEqual(contract["response_schema"], "oracle-review-v2")
-        self.assertEqual(contract["handoff_schema"], "oracle-review-handoff-v3")
-        self.assertEqual(contract["document_publication"], "optional-atomic-and-digest-verified")
-        self.assertEqual(contract["timeout"], "81 minutes")
-        self.assertEqual(contract["target_workspace_write_scope"], "none-by-default")
-        self.assertEqual(namespace["ORACLE_TIMEOUT_SECONDS"], 81 * 60)
-        timed_out_process = mock.Mock(pid=123)
-        timed_out_process.communicate.side_effect = subprocess.TimeoutExpired(
-            command, namespace["ORACLE_TIMEOUT_SECONDS"]
-        )
-        terminate = mock.Mock()
-        with (
-            mock.patch.object(namespace["subprocess"], "Popen", return_value=timed_out_process),
-            mock.patch.dict(namespace["run_codex"].__globals__, {"terminate_process": terminate}),
-            self.assertRaisesRegex(namespace["OracleError"], "81-minute timeout"),
-        ):
-            namespace["run_codex"](command, "prompt", self.scratch, {})
-        timed_out_process.communicate.assert_called_once_with(
-            "prompt", timeout=namespace["ORACLE_TIMEOUT_SECONDS"]
-        )
-        terminate.assert_called_once_with(timed_out_process)
-
-        graceful_process = mock.Mock(pid=456)
-        graceful_process.communicate.return_value = ("", "")
-        if os.name == "nt":
-            namespace["terminate_process"](graceful_process)
-            graceful_process.terminate.assert_called_once_with()
-        else:
-            with mock.patch.object(namespace["os"], "killpg") as killpg:
-                namespace["terminate_process"](graceful_process)
-            killpg.assert_called_once_with(graceful_process.pid, namespace["signal"].SIGTERM)
-        graceful_process.communicate.assert_called_once_with(timeout=2)
-        if os.name == "nt":
-            graceful_process.kill.assert_not_called()
-        else:
-            graceful_process.kill.assert_not_called()
-
-        retained_pipe_process = mock.Mock(pid=789)
-        retained_pipe_process.communicate.side_effect = [
-            subprocess.TimeoutExpired(command, 2),
-            ("", ""),
-        ]
-        if os.name == "nt":
-            namespace["terminate_process"](retained_pipe_process)
-            retained_pipe_process.terminate.assert_called_once_with()
-            retained_pipe_process.kill.assert_called_once_with()
-        else:
-            with mock.patch.object(namespace["os"], "killpg") as killpg:
-                namespace["terminate_process"](retained_pipe_process)
-            self.assertEqual(
-                killpg.call_args_list,
-                [
-                    mock.call(retained_pipe_process.pid, namespace["signal"].SIGTERM),
-                    mock.call(retained_pipe_process.pid, namespace["signal"].SIGKILL),
-                ],
-            )
-        self.assertEqual(
-            retained_pipe_process.communicate.call_args_list,
-            [mock.call(timeout=2), mock.call()],
-        )
-        skill_text = (ORACLE_SKILL / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("disposable current-state worktree", skill_text)
-        self.assertIn("runner sets timeout at 81 minutes", skill_text)
-        self.assertIn("1, 2, 4, 8, 16, 20, 30 minutes", skill_text)
-        self.assertIn("Invoke Oracle when the user explicitly requests it", skill_text)
-        self.assertIn("calling agent decides", skill_text)
-        self.assertIn("latency, token and context cost", skill_text)
-        self.assertIn("without requiring a fixed threshold", skill_text)
-        self.assertIn("prior use neither requires nor forbids another call", skill_text)
-        self.assertNotIn("at least two materially different", skill_text)
-        self.assertNotIn("independent final reviewer", skill_text)
-        self.assertIn("not a claim of infallibility", skill_text)
-        self.assertIn("independently verifiable slices", skill_text)
-        self.assertIn("bounded task packets", skill_text)
-        self.assertIn("document_sha256", skill_text)
-        self.assertIn("report_markdown", skill_text)
-        self.assertEqual(namespace["delete_document"](document), document)
-        self.assertFalse(document.exists())
-
-        target = self.scratch / "target"
-        target.mkdir()
-        request = target / "request.json"
-        request.write_text(
-            json.dumps(
-                {
-                    "objective": "Review the fixture.",
-                    "context": "Fixture context.",
-                    "questions": ["Is it sound?"],
-                    "constraints": [],
-                    "prior_attempts": [],
-                    "evidence": [],
-                    "excluded_actions": [],
-                    "requested_deliverable": "A verdict.",
-                }
-            ),
-            encoding="utf-8",
-        )
-        managed_document = target / "oracle-review.md"
-        captured: Dict[str, Path] = {}
-
-        def fake_run(command, prompt, scratch_workspace, environment):
-            captured["scratch"] = scratch_workspace
-            self.assertNotEqual(scratch_workspace, target)
-            self.assertEqual(environment["TMPDIR"], str(scratch_workspace))
-            self.assertNotIn(str(target), prompt)
-            (scratch_workspace / "intermediate.txt").write_text("scratch", encoding="utf-8")
-            output = Path(command[command.index("--output-last-message") + 1])
-            output.write_text(json.dumps(response), encoding="utf-8")
-            return ""
-
-        main = namespace["main"]
-        with mock.patch.dict(
-            main.__globals__,
-            {
-                "resolve_codex": lambda environment: "codex",
-                "verify_model_contract": lambda executable, environment: None,
-                "run_codex": fake_run,
-            },
-        ):
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                result = main(
-                    [
-                        "--workspace",
-                        str(target),
-                        "--request-file",
-                        str(request),
-                        "--document",
-                        str(managed_document),
-                    ]
-                )
-        self.assertEqual(result, 0)
-        self.assertTrue(managed_document.exists())
-        emitted_handoff = json.loads(stdout.getvalue())
-        self.assertEqual(emitted_handoff["document_path"], str(managed_document.resolve()))
-        self.assertEqual(emitted_handoff["document_sha256"], digest(managed_document.read_bytes()))
-        self.assertFalse(captured["scratch"].exists())
-
-    def test_disposable_review_workspace_mirrors_dirty_git_state_and_cleans(self) -> None:
-        namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
-        target = self.scratch / "git-target"
-        target.mkdir()
-        subprocess.run(["git", "init", "-q"], cwd=str(target), check=True)
-        subprocess.run(
-            ["git", "config", "user.email", "fixture"],
-            cwd=str(target),
-            check=True,
-        )
-        subprocess.run(
-            ["git", "config", "user.name", "Fixture"],
-            cwd=str(target),
-            check=True,
-        )
-        (target / "tracked.txt").write_text("committed\n", encoding="utf-8")
-        subprocess.run(["git", "add", "tracked.txt"], cwd=str(target), check=True)
-        subprocess.run(["git", "commit", "-qm", "fixture"], cwd=str(target), check=True)
-        (target / "tracked.txt").write_text("dirty\n", encoding="utf-8")
-        (target / "untracked.txt").write_text("untracked\n", encoding="utf-8")
-
-        review_path = None
-        with namespace["DisposableReviewWorkspace"](target) as review:
-            review_path = review
-            self.assertNotEqual(review, target)
-            self.assertEqual((review / "tracked.txt").read_text(encoding="utf-8"), "dirty\n")
-            self.assertEqual((review / "untracked.txt").read_text(encoding="utf-8"), "untracked\n")
-            self.assertTrue((review / ".git").exists())
-            (review / "oracle-mutation.txt").write_text("temporary\n", encoding="utf-8")
-
-        self.assertIsNotNone(review_path)
-        self.assertFalse(review_path.exists())
-        self.assertEqual((target / "tracked.txt").read_text(encoding="utf-8"), "dirty\n")
-        self.assertEqual((target / "untracked.txt").read_text(encoding="utf-8"), "untracked\n")
-        worktrees = subprocess.run(
-            ["git", "worktree", "list", "--porcelain"],
-            cwd=str(target),
-            check=True,
-            text=True,
-            stdout=subprocess.PIPE,
-        ).stdout
-        self.assertNotIn(str(review_path), worktrees)
-
-    def test_default_oracle_handoff_is_ephemeral_and_leaves_target_unchanged(self) -> None:
-        namespace = runpy.run_path(str(ORACLE_SKILL / "scripts" / "run_oracle.py"))
-        target = self.scratch / "ephemeral-target"
-        target.mkdir()
-        request = target / "request.json"
-        request.write_text(
-            json.dumps(
-                {
-                    "objective": "Review the fixture.",
-                    "context": "Fixture context.",
-                    "questions": ["Is it sound?"],
-                    "constraints": [],
-                    "prior_attempts": [],
-                    "evidence": [],
-                    "excluded_actions": [],
-                    "requested_deliverable": "A verdict.",
-                }
-            ),
-            encoding="utf-8",
-        )
-        response = {
-            "schema_version": "oracle-review-v2",
-            "status": "complete",
-            "verdict": "proceed",
-            "confidence": "high",
-            "answer": "A concise answer.",
-            "question_answers": [
-                {"question_index": 1, "answer": "Yes, it is sound.", "finding_ids": []}
-            ],
-            "scope": {"reviewed": ["fixture"], "not_reviewed": []},
-            "findings": [],
-            "risks": [],
-            "recommended_next_steps": [],
-            "assumptions": [],
-            "unknowns": [],
-        }
-        captured: Dict[str, Path] = {}
-
-        def fake_run(command, prompt, scratch_workspace, environment):
-            captured["scratch"] = scratch_workspace
-            output = Path(command[command.index("--output-last-message") + 1])
-            output.write_text(json.dumps(response), encoding="utf-8")
-            return ""
-
-        with mock.patch.dict(
-            namespace["main"].__globals__,
-            {
-                "resolve_codex": lambda environment: "codex",
-                "verify_model_contract": lambda executable, environment: None,
-                "run_codex": fake_run,
-            },
-        ):
-            stdout = io.StringIO()
-            with redirect_stdout(stdout):
-                result = namespace["main"](
-                    [
-                        "--workspace",
-                        str(target),
-                        "--request-file",
-                        str(request),
-                    ]
-                )
-
-        self.assertEqual(result, 0)
-        emitted_handoff = json.loads(stdout.getvalue())
-        self.assertEqual(emitted_handoff["schema_version"], "oracle-review-handoff-v3")
-        self.assertIsNone(emitted_handoff["document_path"])
-        self.assertIn("# Oracle Review", emitted_handoff["report_markdown"])
-        self.assertEqual({path.name for path in target.iterdir()}, {"request.json"})
-        self.assertFalse(captured["scratch"].exists())
 
     def test_official_skills_partial_failure_restores_exact_config_and_plugin_state(self) -> None:
         sources = self.scratch / "plugin-sources"
@@ -1828,102 +1483,10 @@ raise SystemExit(2)
         self.assertEqual(recover.returncode, 2)
         self.assertFalse(self.home.exists())
 
-    def test_repository_audit_and_reviewed_policy_hash(self) -> None:
+    def test_repository_audit(self) -> None:
         result = self.run_policy("audit-repo")
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(result.stdout.strip(), "repository audit: passed")
-        policy_text = GLOBAL_POLICY.read_text(encoding="utf-8")
-        self.assertIn("Use subagents for independent, separable work", policy_text)
-        self.assertIn("The main agent integrates and verifies the results", policy_text)
-        self.assertIn("Give each file or external destination one concurrent writer", policy_text)
-        self.assertIn("choose direct execution or orchestration by expected value", policy_text)
-        self.assertIn("Do not require separate planner, generator, evaluator", policy_text)
-        self.assertNotIn("make the main session the orchestrator", policy_text)
-        self.assertNotIn("delegate independent detail work to subagents", policy_text)
-        self.assertIn("authoritative, file-backed plan or ledger", policy_text)
-        self.assertIn("do not create or maintain it solely because", policy_text)
-        self.assertIn("Keep active instructions, contracts, plans, and status distinct", policy_text)
-        self.assertIn("Documentation and other\n  readily reversible changes", policy_text)
-        self.assertIn("Within one successful process on one trusted machine", policy_text)
-        self.assertIn("retaining practical recovery paths", policy_text)
-        self.assertIn("one short, self-contained, copy-paste-ready block", policy_text)
-        self.assertIn("Preserve the receiving agent's execution judgment", policy_text)
-        self.assertNotIn("### Model routing", policy_text)
-        self.assertNotIn("gpt-5.6", policy_text)
-        self.assertNotIn("reasoning effort", policy_text)
-        self.assertNotIn("Oracle", policy_text)
-        self.assertNotIn("$oracle-solver", policy_text)
-        self.assertIn("set an explicit bounded job count", policy_text)
-        self.assertIn("avoid exhausting system memory", policy_text)
-        self.assertIn("never rely on unbounded default parallelism", policy_text)
-        self.assertIn("consider `$loop-init` in read-only `inspect` mode", policy_text)
-        self.assertIn("Inspection does not authorize writes", policy_text)
-        self.assertIn("## Google Workspace Artifact Standards", policy_text)
-        self.assertIn("Set Korean artifacts to a Korean file language", policy_text)
-        self.assertIn("A 16:9 slide canvas is not A4", policy_text)
-        self.assertIn("export the native artifact to PDF and render every page or slide", policy_text)
-        self.assertIn("use a verified native template or rewrite the artifact", policy_text)
-        self.assertNotIn("planning-stuck-or-high-value-review", OFFICIAL_SKILLS.read_text(encoding="utf-8"))
-        self.assertEqual(
-            digest(GLOBAL_POLICY.read_bytes()),
-            "fd3d48041ea25ebad32d3ebf947bd9da1a32a1c1831945f517e5f056b4d0ba32",
-        )
-        self.assertEqual(
-            digest(OFFICIAL_SKILLS.read_bytes()),
-            "97f7c1419f3e40a660c3d84381499f53c1da3b3b57a3a4ca5829a96a84fdc6e4",
-        )
-        self.assertEqual(
-            {relative: digest((ORACLE_SKILL / relative).read_bytes()) for relative in ORACLE_FILES},
-            {
-                "SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
-                "agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
-                "scripts/run_oracle.py": "fd4bcbe9130f7966bd37d88c8ef1c6470ad58bbc0c7423a14b60dea8b22db1d7",
-            },
-        )
-        self.assertEqual(
-            {relative: digest((LOOP_INIT_SKILL / relative).read_bytes()) for relative in LOOP_INIT_FILES},
-            {
-                "SKILL.md": "cd15dfba9eebd6734f88bfe69aa9fde00f7f81f8c480b01148cd7eeed8f8b849",
-                "agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
-                "scripts/init_loop.py": "47a861faa143199143db89879b4a7a8ef20fad7b1dfb9c1e7950a667a3826bbf",
-            },
-        )
-        self.assertEqual(
-            {
-                relative: digest((GOOGLE_WORKSPACE_QA_SKILL / relative).read_bytes())
-                for relative in GOOGLE_WORKSPACE_QA_FILES
-            },
-            {
-                "SKILL.md": "e003063c481b6cf6382ea161e94dc6637157afde633233bd83f9fe81a9df0675",
-                "agents/openai.yaml": "d7673cfb0254cccc182bb699afe2b67cd732d2a60e2fe634a946e1bd7ddebf88",
-            },
-        )
-        self.assertEqual(
-            {
-                relative: digest((LOCAL_DOCUMENT_SKILL / relative).read_bytes())
-                for relative in LOCAL_DOCUMENT_FILES
-            },
-            {
-                "SKILL.md": "53970df737f25c22ea417f38e7944001fe5adf3b05404b5a916e8b03e9923a97",
-                "agents/openai.yaml": "84fba656331b01552bcc27b0a6aa24534ec4a68393e43a241ccc7a86798a9de8",
-                "scripts/extract_docling.py": "f046ed1706488b9628dbf7eb0bbd608779b66a87f3a384e5fda1077683494b0e",
-                "scripts/extract_ocr.py": "076ff81771fae8867da81d8ca534cf8a9bdd90fb6bf416c47b3b5a9dc549dc10",
-                "scripts/provision_runtime.sh": "435d4a2c5cf8229621e226678da984cf8a2731a189c7daf2322f25531910981e",
-                "scripts/run_docling.sh": "498673dd4ec507c4d34b8dea91c172abb4b73b97ef9b5eb8cdcde75bc9be008e",
-                "scripts/run_ocr.sh": "391d260071052701abfba8a51c9ac6e69895525ceb155090e36827bf2fb738e0",
-            },
-        )
-        loop_text = (LOOP_INIT_SKILL / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("Policy-triggered use is inspect-only", loop_text)
-        self.assertIn("does not authorize initialization", loop_text)
-        qa_text = (GOOGLE_WORKSPACE_QA_SKILL / "SKILL.md").read_text(encoding="utf-8")
-        self.assertIn("Noto Sans KR", qa_text)
-        self.assertIn("Resolve the effective font for every nonempty text run", qa_text)
-        self.assertIn("speaker-notes page", qa_text)
-        self.assertIn("notes master", qa_text)
-        self.assertIn("documentStyle.documentFormat.documentMode", qa_text)
-        self.assertIn("Do not issue `batchUpdate`", qa_text)
-        self.assertIn("Return `PASS` only", qa_text)
 
 
 if __name__ == "__main__":

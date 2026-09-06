@@ -1,4 +1,6 @@
-# Decisions
+# Historical Decisions
+
+Historical evidence only. Superseded by the current global guide and latest audit in `README.md`. Past authority, gates, and procedures do not apply to new tasks.
 
 Append decision records below. Do not rewrite prior decisions unless correcting a factual error.
 

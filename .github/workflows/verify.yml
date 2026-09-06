@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - name: Check out repository
@@ -20,13 +20,36 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Run acceptance tests
+        env:
+          PYTHONDONTWRITEBYTECODE: "1"
+        run: python tests/test_acceptance.py
+      - name: Audit public repository
+        run: python bin/codex-policy audit-repo
+
+  minimum-python:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
       - name: Set up minimum supported Python
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.9"
-      - name: Run acceptance tests
+      - name: Check core installer compatibility
         env:
           PYTHONDONTWRITEBYTECODE: "1"
-        run: python3 tests/test_acceptance.py
-      - name: Audit public repository
-        run: ./bin/codex-policy audit-repo
+        run: >-
+          python tests/test_acceptance.py
+          CodexPolicyAcceptance.test_default_plan_is_read_only
+          CodexPolicyAcceptance.test_empty_home_install_verify_and_idempotence
+          CodexPolicyAcceptance.test_unowned_toml_text_and_semantics_are_preserved
+          CodexPolicyAcceptance.test_core_retirement_backs_up_local_edits_preserves_extras_and_is_idempotent
+          CodexPolicyAcceptance.test_core_retirement_rollback_and_interrupted_recovery_restore_local_edits
+          CodexPolicyAcceptance.test_interrupted_transaction_recovery

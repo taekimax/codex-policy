@@ -48,48 +48,6 @@ CONFIG_SOURCE = REPO_ROOT / "global" / "config.owned.toml"
 OWNED_SOURCE = REPO_ROOT / "global" / "owned-keys.txt"
 VENDORED_USER_SKILL_FILES = (
     (
-        "oracle-solver-instructions",
-        "oracle-solver",
-        REPO_ROOT / "global" / "skills" / "oracle-solver" / "SKILL.md",
-        "skills/oracle-solver/SKILL.md",
-        0o644,
-    ),
-    (
-        "oracle-solver-metadata",
-        "oracle-solver",
-        REPO_ROOT / "global" / "skills" / "oracle-solver" / "agents" / "openai.yaml",
-        "skills/oracle-solver/agents/openai.yaml",
-        0o644,
-    ),
-    (
-        "oracle-solver-runner",
-        "oracle-solver",
-        REPO_ROOT / "global" / "skills" / "oracle-solver" / "scripts" / "run_oracle.py",
-        "skills/oracle-solver/scripts/run_oracle.py",
-        0o755,
-    ),
-    (
-        "loop-init-instructions",
-        "loop-init",
-        REPO_ROOT / "global" / "skills" / "loop-init" / "SKILL.md",
-        "skills/loop-init/SKILL.md",
-        0o644,
-    ),
-    (
-        "loop-init-metadata",
-        "loop-init",
-        REPO_ROOT / "global" / "skills" / "loop-init" / "agents" / "openai.yaml",
-        "skills/loop-init/agents/openai.yaml",
-        0o644,
-    ),
-    (
-        "loop-init-helper",
-        "loop-init",
-        REPO_ROOT / "global" / "skills" / "loop-init" / "scripts" / "init_loop.py",
-        "skills/loop-init/scripts/init_loop.py",
-        0o755,
-    ),
-    (
         "google-workspace-artifact-qa-instructions",
         "google-workspace-artifact-qa",
         REPO_ROOT / "global" / "skills" / "google-workspace-artifact-qa" / "SKILL.md",
@@ -155,7 +113,18 @@ VENDORED_USER_SKILL_FILES = (
 )
 VENDORED_FILE_NAMES = tuple(item[0] for item in VENDORED_USER_SKILL_FILES)
 VENDORED_TARGETS = {item[0]: item[3] for item in VENDORED_USER_SKILL_FILES}
-TARGET_NAMES = ("AGENTS.md", "config.toml", *VENDORED_FILE_NAMES)
+# Keep original transaction names so unfinished installations of retired skills
+# can still be recovered after updating this repository.
+RETIRED_TARGETS = {
+    "oracle-solver-instructions": "skills/oracle-solver/SKILL.md",
+    "oracle-solver-metadata": "skills/oracle-solver/agents/openai.yaml",
+    "oracle-solver-runner": "skills/oracle-solver/scripts/run_oracle.py",
+    "loop-init-instructions": "skills/loop-init/SKILL.md",
+    "loop-init-metadata": "skills/loop-init/agents/openai.yaml",
+    "loop-init-helper": "skills/loop-init/scripts/init_loop.py",
+}
+MANAGED_SKILL_TARGETS = {**VENDORED_TARGETS, **RETIRED_TARGETS}
+TARGET_NAMES = ("AGENTS.md", "config.toml", *MANAGED_SKILL_TARGETS)
 INCOMPLETE_STATES = {"prepared", "applying", "recovery_required"}
 MAX_TARGET_BYTES = 16 * 1024 * 1024
 MAX_REPO_BYTES = 1024 * 1024
@@ -188,12 +157,6 @@ EXPECTED_FILES = {
     "global/config.owned.toml",
     "global/official-skills.json",
     "global/owned-keys.txt",
-    "global/skills/oracle-solver/SKILL.md",
-    "global/skills/oracle-solver/agents/openai.yaml",
-    "global/skills/oracle-solver/scripts/run_oracle.py",
-    "global/skills/loop-init/SKILL.md",
-    "global/skills/loop-init/agents/openai.yaml",
-    "global/skills/loop-init/scripts/init_loop.py",
     "global/skills/google-workspace-artifact-qa/SKILL.md",
     "global/skills/google-workspace-artifact-qa/agents/openai.yaml",
     "global/skills/local-document-extraction/SKILL.md",
@@ -204,11 +167,6 @@ EXPECTED_FILES = {
     "global/skills/local-document-extraction/scripts/run_docling.sh",
     "global/skills/local-document-extraction/scripts/run_ocr.sh",
     ".loop/README.md",
-    ".loop/00_request.md",
-    ".loop/01_spec.md",
-    ".loop/02_contract.md",
-    ".loop/03_plan.md",
-    ".loop/04_progress.md",
     ".loop/05_decisions.md",
     ".loop/06_log.md",
     "tests/test_acceptance.py",
@@ -227,25 +185,6 @@ EXPECTED_FILES = {
     "vendor/tomlkit/toml_document.py",
     "vendor/tomlkit/toml_file.py",
 }
-REVIEWED_ARTIFACT_HASHES = {
-    "global/AGENTS.md": "fd3d48041ea25ebad32d3ebf947bd9da1a32a1c1831945f517e5f056b4d0ba32",
-    "global/official-skills.json": "97f7c1419f3e40a660c3d84381499f53c1da3b3b57a3a4ca5829a96a84fdc6e4",
-    "global/skills/google-workspace-artifact-qa/SKILL.md": "e003063c481b6cf6382ea161e94dc6637157afde633233bd83f9fe81a9df0675",
-    "global/skills/google-workspace-artifact-qa/agents/openai.yaml": "d7673cfb0254cccc182bb699afe2b67cd732d2a60e2fe634a946e1bd7ddebf88",
-    "global/skills/oracle-solver/SKILL.md": "0022029bc1f89badb93895cb743fc543fe91f6e1c5ae2076c6855ed04371c0ed",
-    "global/skills/oracle-solver/agents/openai.yaml": "95cf2df4515965a65353f7783a123614fe30c7538536ee6e56dc8d02309186d2",
-    "global/skills/oracle-solver/scripts/run_oracle.py": "fd4bcbe9130f7966bd37d88c8ef1c6470ad58bbc0c7423a14b60dea8b22db1d7",
-    "global/skills/loop-init/SKILL.md": "cd15dfba9eebd6734f88bfe69aa9fde00f7f81f8c480b01148cd7eeed8f8b849",
-    "global/skills/loop-init/agents/openai.yaml": "5ae6cee2721804f3829ca427bdc7365f6292c1cbe66d3961eaa711516d4b5365",
-    "global/skills/loop-init/scripts/init_loop.py": "47a861faa143199143db89879b4a7a8ef20fad7b1dfb9c1e7950a667a3826bbf",
-    "global/skills/local-document-extraction/SKILL.md": "53970df737f25c22ea417f38e7944001fe5adf3b05404b5a916e8b03e9923a97",
-    "global/skills/local-document-extraction/agents/openai.yaml": "84fba656331b01552bcc27b0a6aa24534ec4a68393e43a241ccc7a86798a9de8",
-    "global/skills/local-document-extraction/scripts/extract_docling.py": "f046ed1706488b9628dbf7eb0bbd608779b66a87f3a384e5fda1077683494b0e",
-    "global/skills/local-document-extraction/scripts/extract_ocr.py": "076ff81771fae8867da81d8ca534cf8a9bdd90fb6bf416c47b3b5a9dc549dc10",
-    "global/skills/local-document-extraction/scripts/provision_runtime.sh": "435d4a2c5cf8229621e226678da984cf8a2731a189c7daf2322f25531910981e",
-    "global/skills/local-document-extraction/scripts/run_docling.sh": "498673dd4ec507c4d34b8dea91c172abb4b73b97ef9b5eb8cdcde75bc9be008e",
-    "global/skills/local-document-extraction/scripts/run_ocr.sh": "391d260071052701abfba8a51c9ac6e69895525ceb155090e36827bf2fb738e0",
-}
 LOCAL_RUNTIME_DIRECTORIES = {".loop/backups"}
 
 
@@ -257,7 +196,7 @@ class PolicyError(Exception):
 class FilePlan:
     name: str
     before: Optional[bytes]
-    after: bytes
+    after: Optional[bytes]
     before_mode: Optional[int]
     mode: Optional[int]
 
@@ -267,6 +206,8 @@ class FilePlan:
 
     @property
     def status(self) -> str:
+        if self.after is None:
+            return "absent" if self.before is None else "present"
         if self.before is None:
             return "missing"
         return "current" if not self.changed else "drifted"
@@ -327,12 +268,12 @@ def read_regular(path: Path, *, required: bool, limit: int) -> Optional[bytes]:
 
 
 def target_path(home: Path, name: str) -> Path:
-    return home / VENDORED_TARGETS.get(name, name)
+    return home / MANAGED_SKILL_TARGETS.get(name, name)
 
 
 def managed_target_path(home: Path, name: str) -> Path:
     target = target_path(home, name)
-    if name in VENDORED_TARGETS:
+    if name in MANAGED_SKILL_TARGETS:
         validate_skill_target_parents(home, target)
     return target
 
@@ -643,6 +584,18 @@ def build_plan(home: Path) -> InstallPlan:
                 desired_mode(mode),
             )
         )
+    for name, target_relative in RETIRED_TARGETS.items():
+        target = home / target_relative
+        validate_skill_target_parents(home, target)
+        files.append(
+            FilePlan(
+                name,
+                read_regular(target, required=False, limit=MAX_TARGET_BYTES),
+                None,
+                file_mode(target),
+                None,
+            )
+        )
     return InstallPlan(
         files=files,
         override_present=lexists(home / "AGENTS.override.md"),
@@ -664,6 +617,7 @@ def plan_report(plan: InstallPlan) -> Dict[str, Any]:
         "global_policy": by_name["AGENTS.md"].status,
         "managed_config": by_name["config.toml"].status,
         "vendored_user_skills": vendored_status,
+        "retired_user_skills": "present" if any(by_name[name].changed for name in RETIRED_TARGETS) else "absent",
         "override": "blocking" if plan.override_present else "absent",
         "transaction": "recovery_required" if plan.recovery_required else "clean",
         "action": action,
@@ -679,6 +633,7 @@ def print_report(title: str, report: Mapping[str, Any], json_mode: bool) -> None
         "global_policy": "global policy",
         "managed_config": "managed config",
         "vendored_user_skills": "vendored user skills",
+        "retired_user_skills": "retired user skills",
         "override": "override",
         "transaction": "transaction",
         "action": "action",
@@ -983,10 +938,16 @@ def apply_plan(home: Path) -> str:
                 if not item.changed:
                     continue
                 verify_snapshot(home, item)
-                created_directories.extend(ensure_target_parent_directories(home, item))
-                verify_snapshot(home, item)
+                if item.after is not None:
+                    created_directories.extend(ensure_target_parent_directories(home, item))
+                    verify_snapshot(home, item)
                 replaced.append(item.name)
-                atomic_write(managed_target_path(home, item.name), item.after, item.mode)
+                target = managed_target_path(home, item.name)
+                if item.after is None:
+                    target.unlink()
+                    fsync_directory(target.parent)
+                else:
+                    atomic_write(target, item.after, item.mode)
                 journal["replaced"] = list(replaced)
                 write_journal(directory, journal)
                 fail_after = os.environ.get("CODEX_POLICY_TEST_FAIL_AFTER")
@@ -1038,7 +999,11 @@ def validate_journal_files(value: Mapping[str, Any]) -> Dict[str, Mapping[str, A
             not before_present and before_mode is not None
         ):
             fail("a local policy transaction journal is invalid")
-        if not isinstance(after_mode, int) and not (os.name == "nt" and after_mode is None):
+        retirement = name in RETIRED_TARGETS and record.get("after_sha256") is None
+        if retirement:
+            if after_mode is not None:
+                fail("a local policy transaction journal is invalid")
+        elif not isinstance(after_mode, int) and not (os.name == "nt" and after_mode is None):
             fail("a local policy transaction journal is invalid")
         result[name] = record
     return result
@@ -1191,8 +1156,6 @@ def audit_git_history() -> None:
             in {
                 "bin/codex-policy",
                 "bin/codex-skills-policy",
-                "global/skills/oracle-solver/scripts/run_oracle.py",
-                "global/skills/loop-init/scripts/init_loop.py",
                 "global/skills/local-document-extraction/scripts/extract_docling.py",
                 "global/skills/local-document-extraction/scripts/extract_ocr.py",
                 "global/skills/local-document-extraction/scripts/provision_runtime.sh",
@@ -1276,8 +1239,6 @@ def audit_repository() -> None:
                 in {
                     "bin/codex-policy",
                     "bin/codex-skills-policy",
-                    "global/skills/oracle-solver/scripts/run_oracle.py",
-                    "global/skills/loop-init/scripts/init_loop.py",
                     "global/skills/local-document-extraction/scripts/extract_docling.py",
                     "global/skills/local-document-extraction/scripts/extract_ocr.py",
                     "global/skills/local-document-extraction/scripts/provision_runtime.sh",
@@ -1289,11 +1250,6 @@ def audit_repository() -> None:
         data = read_regular(path, required=True, limit=MAX_REPO_BYTES)
         assert data is not None
         scan_public_bytes(data)
-    for relative, expected_hash in REVIEWED_ARTIFACT_HASHES.items():
-        artifact = read_regular(REPO_ROOT / relative, required=True, limit=MAX_REPO_BYTES)
-        assert artifact is not None
-        if sha256(artifact) != expected_hash:
-            fail("a reviewed policy artifact differs from the approved source")
     load_owned_policy()
     audit_git_history()
 

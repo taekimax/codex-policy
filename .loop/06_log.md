@@ -1,4 +1,6 @@
-# Operational Log
+# Historical Operational Log
+
+Historical evidence only. Superseded by the current global guide and latest audit in `README.md`. Past authority, gates, and procedures do not apply to new tasks.
 
 Use `## YYYY-MM-DD HH:mm | role | title` headings. Record meaningful task events without secrets.
 

@@ -121,6 +121,8 @@
     {"kind": "codex-user", "skill": "code-auditor"},
     {"kind": "codex-user", "skill": "feature-implementing"},
     {"kind": "codex-user", "skill": "test-fixing"},
+    {"kind": "codex-user", "skill": "loop-init"},
+    {"kind": "codex-user", "skill": "oracle-solver"},
     {"kind": "user", "skill": "find-skills"},
     {"kind": "user", "skill": "web-design-guidelines"}
   ],
@@ -129,9 +131,7 @@
   ],
   "vendored_user_skills": [
     {"name": "google-workspace-artifact-qa", "source": "global/skills/google-workspace-artifact-qa", "runtime_policy": "exact-reviewed-source"},
-    {"name": "loop-init", "source": "global/skills/loop-init", "runtime_policy": "exact-reviewed-source"},
-    {"name": "local-document-extraction", "source": "global/skills/local-document-extraction", "runtime_policy": "exact-reviewed-source"},
-    {"name": "oracle-solver", "source": "global/skills/oracle-solver", "runtime_policy": "exact-reviewed-source"}
+    {"name": "local-document-extraction", "source": "global/skills/local-document-extraction", "runtime_policy": "exact-reviewed-source"}
   ],
   "retained_system_skills": ["imagegen", "openai-docs", "plugin-creator", "skill-creator", "skill-installer"]
 }
