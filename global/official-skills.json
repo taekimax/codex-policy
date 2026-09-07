@@ -130,6 +130,7 @@
     {"name": "context7-cli", "policy": "implicit-narrow"}
   ],
   "vendored_user_skills": [
+    {"name": "macos-app-delivery", "source": "global/skills/macos-app-delivery", "runtime_policy": "exact-reviewed-source"},
     {"name": "google-workspace-artifact-qa", "source": "global/skills/google-workspace-artifact-qa", "runtime_policy": "exact-reviewed-source"},
     {"name": "local-document-extraction", "source": "global/skills/local-document-extraction", "runtime_policy": "exact-reviewed-source"}
   ],

@@ -268,6 +268,10 @@ raise SystemExit(2)
             destination.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(LOCAL_DOCUMENT_SKILL / relative, destination)
 
+    def write_current_macos_delivery(self) -> None:
+        source = REPO / "global" / "skills" / "macos-app-delivery"
+        shutil.copytree(source, self.home / "skills" / "macos-app-delivery", dirs_exist_ok=True)
+
     def make_current_skills_environment(
         self,
         extra_installed: Sequence[Dict[str, object]] = (),
@@ -301,6 +305,8 @@ raise SystemExit(2)
                 self.assertEqual(destination.read_bytes(), source.read_bytes())
                 if os.name != "nt":
                     self.assertEqual(stat.S_IMODE(destination.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
+        for relative in ("skills/macos-app-delivery/SKILL.md", "skills/macos-app-delivery/agents/openai.yaml", "templates/session-handoff.txt"):
+            self.assertEqual((self.home / relative).read_bytes(), (REPO / "global" / relative).read_bytes())
         self.assertFalse((self.home / "skills" / "loop-init").exists())
         self.assertFalse((self.home / "skills" / "oracle-solver").exists())
         config = (self.home / "config.toml").read_text(encoding="utf-8")
@@ -321,6 +327,27 @@ raise SystemExit(2)
         self.assertIn("result: none", second.stdout)
         self.assertEqual((self.home / "config.toml").read_bytes(), before)
         self.assertEqual(self.transaction_directories(), transactions)
+
+    def test_handoff_template_drift_backup_and_failure_recovery(self) -> None:
+        initial = self.run_policy("apply", "--yes")
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        target = self.home / "templates" / "session-handoff.txt"
+        local = b"local handoff edits\n"
+        target.write_bytes(local)
+        extra = target.parent / "personal.txt"
+        extra.write_bytes(b"preserve unknown template\n")
+        plan = self.run_policy("plan", "--json")
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertNotEqual(json.loads(plan.stdout)["handoff_template"], "current")
+        failed = self.run_policy("apply", "--yes", extra_environment={"CODEX_POLICY_TEST_FAIL_AFTER": "1"})
+        self.assertEqual(failed.returncode, 2)
+        self.assertEqual(target.read_bytes(), local)
+        repaired = self.run_policy("apply", "--yes")
+        self.assertEqual(repaired.returncode, 0, repaired.stderr)
+        self.assertEqual(target.read_bytes(), (REPO / "global" / "templates" / "session-handoff.txt").read_bytes())
+        self.assertEqual(extra.read_bytes(), b"preserve unknown template\n")
+        self.assertTrue(any(path.is_file() and path.read_bytes() == local for folder in self.transaction_directories() for path in folder.rglob("*")))
+        self.assertEqual(self.run_policy("verify").returncode, 0)
 
     def seed_retired_skill_files(self) -> Dict[Path, bytes]:
         retired = {}
@@ -955,6 +982,7 @@ raise SystemExit(2)
         self.write_current_context7()
         self.write_current_google_workspace_qa()
         self.write_current_local_document_extraction()
+        self.write_current_macos_delivery()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
@@ -977,6 +1005,7 @@ raise SystemExit(2)
         environment = self.make_current_skills_environment()
         self.write_current_google_workspace_qa()
         self.write_current_local_document_extraction()
+        self.write_current_macos_delivery()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
@@ -992,6 +1021,7 @@ raise SystemExit(2)
         environment = self.make_current_skills_environment()
         self.write_current_google_workspace_qa()
         self.write_current_local_document_extraction()
+        self.write_current_macos_delivery()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")

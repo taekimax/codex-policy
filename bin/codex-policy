@@ -46,7 +46,23 @@ SCHEMA = 1
 POLICY_SOURCE = REPO_ROOT / "global" / "AGENTS.md"
 CONFIG_SOURCE = REPO_ROOT / "global" / "config.owned.toml"
 OWNED_SOURCE = REPO_ROOT / "global" / "owned-keys.txt"
+TEMPLATE_SOURCE = REPO_ROOT / "global" / "templates" / "session-handoff.txt"
+TEMPLATE_TARGETS = {"session-handoff-template": "templates/session-handoff.txt"}
 VENDORED_USER_SKILL_FILES = (
+    (
+        "macos-app-delivery-instructions",
+        "macos-app-delivery",
+        REPO_ROOT / "global" / "skills" / "macos-app-delivery" / "SKILL.md",
+        "skills/macos-app-delivery/SKILL.md",
+        0o644,
+    ),
+    (
+        "macos-app-delivery-metadata",
+        "macos-app-delivery",
+        REPO_ROOT / "global" / "skills" / "macos-app-delivery" / "agents" / "openai.yaml",
+        "skills/macos-app-delivery/agents/openai.yaml",
+        0o644,
+    ),
     (
         "google-workspace-artifact-qa-instructions",
         "google-workspace-artifact-qa",
@@ -123,8 +139,8 @@ RETIRED_TARGETS = {
     "loop-init-metadata": "skills/loop-init/agents/openai.yaml",
     "loop-init-helper": "skills/loop-init/scripts/init_loop.py",
 }
-MANAGED_SKILL_TARGETS = {**VENDORED_TARGETS, **RETIRED_TARGETS}
-TARGET_NAMES = ("AGENTS.md", "config.toml", *MANAGED_SKILL_TARGETS)
+MANAGED_NESTED_TARGETS = {**VENDORED_TARGETS, **RETIRED_TARGETS, **TEMPLATE_TARGETS}
+TARGET_NAMES = ("AGENTS.md", "config.toml", *MANAGED_NESTED_TARGETS)
 INCOMPLETE_STATES = {"prepared", "applying", "recovery_required"}
 MAX_TARGET_BYTES = 16 * 1024 * 1024
 MAX_REPO_BYTES = 1024 * 1024
@@ -157,6 +173,9 @@ EXPECTED_FILES = {
     "global/config.owned.toml",
     "global/official-skills.json",
     "global/owned-keys.txt",
+    "global/templates/session-handoff.txt",
+    "global/skills/macos-app-delivery/SKILL.md",
+    "global/skills/macos-app-delivery/agents/openai.yaml",
     "global/skills/google-workspace-artifact-qa/SKILL.md",
     "global/skills/google-workspace-artifact-qa/agents/openai.yaml",
     "global/skills/local-document-extraction/SKILL.md",
@@ -268,13 +287,13 @@ def read_regular(path: Path, *, required: bool, limit: int) -> Optional[bytes]:
 
 
 def target_path(home: Path, name: str) -> Path:
-    return home / MANAGED_SKILL_TARGETS.get(name, name)
+    return home / MANAGED_NESTED_TARGETS.get(name, name)
 
 
 def managed_target_path(home: Path, name: str) -> Path:
     target = target_path(home, name)
-    if name in MANAGED_SKILL_TARGETS:
-        validate_skill_target_parents(home, target)
+    if name in MANAGED_NESTED_TARGETS:
+        validate_target_parents(home, target)
     return target
 
 
@@ -298,11 +317,11 @@ def desired_mode(mode: int) -> Optional[int]:
     return None if os.name == "nt" else mode
 
 
-def validate_skill_target_parents(home: Path, target: Path) -> None:
+def validate_target_parents(home: Path, target: Path) -> None:
     try:
         relative = target.relative_to(home)
     except ValueError:
-        fail("a managed skill target is outside the Codex home")
+        fail("a managed target is outside the Codex home")
     current = home
     for part in relative.parts[:-1]:
         current = current / part
@@ -311,9 +330,9 @@ def validate_skill_target_parents(home: Path, target: Path) -> None:
         try:
             info = current.lstat()
         except OSError:
-            fail("a managed skill directory cannot be inspected")
+            fail("a managed directory cannot be inspected")
         if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-            fail("a managed skill directory has an unsafe filesystem type")
+            fail("a managed directory has an unsafe filesystem type")
 
 
 def validate_vendored_sources() -> Dict[str, bytes]:
@@ -574,7 +593,7 @@ def build_plan(home: Path) -> InstallPlan:
     vendored_sources = validate_vendored_sources()
     for name, _, _, target_relative, mode in VENDORED_USER_SKILL_FILES:
         target = home / target_relative
-        validate_skill_target_parents(home, target)
+        validate_target_parents(home, target)
         files.append(
             FilePlan(
                 name,
@@ -584,9 +603,24 @@ def build_plan(home: Path) -> InstallPlan:
                 desired_mode(mode),
             )
         )
+    template_data = read_regular(TEMPLATE_SOURCE, required=True, limit=MAX_REPO_BYTES)
+    assert template_data is not None
+    try:
+        template_data.decode("utf-8")
+    except UnicodeDecodeError:
+        fail("the handoff template is not valid UTF-8")
+    template_target = home / TEMPLATE_TARGETS["session-handoff-template"]
+    validate_target_parents(home, template_target)
+    files.append(FilePlan(
+        "session-handoff-template",
+        read_regular(template_target, required=False, limit=MAX_TARGET_BYTES),
+        template_data,
+        file_mode(template_target),
+        desired_mode(0o644),
+    ))
     for name, target_relative in RETIRED_TARGETS.items():
         target = home / target_relative
-        validate_skill_target_parents(home, target)
+        validate_target_parents(home, target)
         files.append(
             FilePlan(
                 name,
@@ -617,6 +651,7 @@ def plan_report(plan: InstallPlan) -> Dict[str, Any]:
         "global_policy": by_name["AGENTS.md"].status,
         "managed_config": by_name["config.toml"].status,
         "vendored_user_skills": vendored_status,
+        "handoff_template": by_name["session-handoff-template"].status,
         "retired_user_skills": "present" if any(by_name[name].changed for name in RETIRED_TARGETS) else "absent",
         "override": "blocking" if plan.override_present else "absent",
         "transaction": "recovery_required" if plan.recovery_required else "clean",
@@ -633,6 +668,7 @@ def print_report(title: str, report: Mapping[str, Any], json_mode: bool) -> None
         "global_policy": "global policy",
         "managed_config": "managed config",
         "vendored_user_skills": "vendored user skills",
+        "handoff_template": "handoff template",
         "retired_user_skills": "retired user skills",
         "override": "override",
         "transaction": "transaction",
@@ -800,7 +836,7 @@ def ensure_target_parent_directories(home: Path, item: FilePlan) -> List[Path]:
     try:
         relative = target.relative_to(home)
     except ValueError:
-        fail("a managed skill target is outside the Codex home")
+        fail("a managed target is outside the Codex home")
     created: List[Path] = []
     current = home
     for part in relative.parts[:-1]:
@@ -809,9 +845,9 @@ def ensure_target_parent_directories(home: Path, item: FilePlan) -> List[Path]:
             try:
                 info = current.lstat()
             except OSError:
-                fail("a managed skill directory cannot be inspected")
+                fail("a managed directory cannot be inspected")
             if stat.S_ISLNK(info.st_mode) or not stat.S_ISDIR(info.st_mode):
-                fail("a managed skill directory has an unsafe filesystem type")
+                fail("a managed directory has an unsafe filesystem type")
             continue
         try:
             current.mkdir(mode=0o755)
@@ -819,7 +855,7 @@ def ensure_target_parent_directories(home: Path, item: FilePlan) -> List[Path]:
         except PolicyError:
             raise
         except OSError:
-            fail("a managed skill directory cannot be created")
+            fail("a managed directory cannot be created")
         created.append(current)
     return created
 

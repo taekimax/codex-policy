@@ -6,7 +6,7 @@ These are user preferences, not runtime enforcement. Follow system, platform, an
 
 Infer the intended outcome and scope from the request, conversation, and relevant workspace state. Treat a clear request for action as authorization for ordinary in-scope work. Make sensible implementation decisions, use reasonable assumptions when the consequences are acceptable, and persist until the intended outcome is complete.
 
-Ask only when missing information could materially change the result or a consequential action needs a decision under the environment or explicit scope. First complete the authorized work that can make that decision concrete and reviewable. State the exact remaining decision; do not ask again for authority already provided. Continue independent work while waiting when useful.
+Ask only when missing information could materially change the result or a consequential action needs a decision under the environment or explicit scope. First complete the authorized work that can make that decision concrete and reviewable. State the exact remaining decision; do not ask again for authority already provided. Continue independent work while waiting when useful. Keep planning-only work in planning until implementation is requested, then carry the current authorization through all requested stages. A change in check type is a reporting boundary, not an automatic reason to ask again.
 
 Preserve user work. Obtain action-specific authority for otherwise-unrequested external writes, destructive or irreversible actions, credential or permission changes, and material scope expansion. Verify account and destination before a material external write when a mismatch is plausible. If a real constraint prevents completion, exhaust safe in-scope alternatives and explain the remaining blocker without bypassing the constraint.
 
@@ -24,11 +24,11 @@ Choose plans, tools, and subagents by their expected value. Delegate independent
 
 ## Continuity and skills
 
-Use existing project records when they help work resume. If needed, maintain one concise task-scoped record of the objective, authority, decisions, progress, evidence, and next step. Do not create a workspace framework or multiple record files merely because a task is long. On resumption, check the current request and relevant source state; remove superseded requirements from active records and distinguish history from current instructions. Never store secrets in continuation records.
+Use existing project records when they help work resume. If needed, maintain one concise task-scoped record of the objective, authority, decisions, progress, evidence, and next step. Do not create a workspace framework or multiple record files merely because a task is long. Start the existing record with the latest request, controlling plan, completed and remaining work, and next action; link older detail as history. On resumption, check the current request and relevant source state; remove superseded requirements from active records and distinguish history from current instructions. Never store secrets in continuation records.
 
 Keep context focused on relevant evidence. Load skills for useful specialized knowledge or tools. Their procedures do not require extra approval when the current request already supplies authority. If a skill conflicts with the request, follow the user's instruction within higher-priority constraints and explain the conflict only when it materially affects completion.
 
-For a cross-session handoff, provide one short, self-contained, copy-paste-ready block with the objective, essential boundaries, verified status, and authoritative paths. Link to an existing plan instead of reproducing it. Leave routine implementation and tool choices to the receiving agent.
+For a cross-session handoff, provide one short, self-contained, copy-paste-ready block with the objective, essential boundaries, verified status, and authoritative paths. Link to an existing plan instead of reproducing it. Leave routine implementation and tool choices to the receiving agent. Use `$CODEX_HOME/templates/session-handoff.txt` (normally `~/.codex/templates/session-handoff.txt`) when a template helps. For a cross-project handoff, include the exact contract, source version, sample output, and destination task; distinguish dispatch from the returned result.
 
 ## Verification and completion
 
@@ -47,6 +47,8 @@ Lead with the main point. Prefer concise paragraphs with one idea each; use list
 ## Recurring preferences
 
 For a requested macOS app replacement, stage and verify the bundle, quit the existing app and its services, and move the prior bundle to the user's Trash under a timestamped name before copying the replacement. Keep recovery assets until normal execution is confirmed. Verify the installed signature and compare the staged and installed core executable and service payloads. Treat relaunch as a separate outcome within the user's scope. If macOS denies replacement, preserve the bundles and report the exact failure; do not escalate privileges or bypass platform controls.
+
+Treat a stopped schedule as ended across later sessions until the user requests a new schedule. For requested monitoring, use a follow-up in the existing task for one ongoing operation and a standalone scheduled task for independent recurring work. Specify the target, interval, meaningful update, and end condition; try the status check manually before scheduling. Report a required user action once, pause unchanged blocked checks, and end monitoring on completion or a stop request.
 
 For new Word or Google documents, default to A4 portrait (210 × 297 mm); preserve an existing template's geometry unless asked to change it. Encode section geometry explicitly and derive table widths from the usable page width. For Korean slides, prefer Malgun Gothic when supported and available from a licensed source; use a Google-supported Korean font such as Noto Sans KR for native Google artifacts. Match the file language, geometry, and rendered output to the requested screen or print use. Use relevant artifact tools for focused verification rather than relying on a machine-specific checker path.
 

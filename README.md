@@ -11,6 +11,8 @@ Canonical sources and a portable installer for consistent personal Codex default
 | Owned settings | `global/config.owned.toml` and `global/owned-keys.txt`: portable agent limits |
 | Artifact QA | `global/skills/google-workspace-artifact-qa/`: native Google layout and typography checks |
 | Local extraction | `global/skills/local-document-extraction/`: OCR and offline structured conversion tools |
+| macOS delivery | `global/skills/macos-app-delivery/`: recoverable app delivery using project adapters |
+| Handoff template | `global/templates/session-handoff.txt`, deployed to `$CODEX_HOME/templates/` |
 | Optional catalog reconciliation | `global/official-skills.json` and `bin/codex-skills-policy` |
 | Audit record | `.loop/README.md`; older decisions and logs are historical only |
 
@@ -28,7 +30,7 @@ Requires Python 3.9 or newer. The core command works locally on macOS, Linux, an
 ./bin/codex-policy verify
 ```
 
-The core installer manages the global guide, declared settings, and nine files belonging to the two retained user skills. It validates source metadata and script syntax, preserves unowned TOML through the vendored round-trip parser, and atomically replaces changed files with private local backups and rollback after ordinary failures. It checks installed content against the canonical source; prose changes do not require updating duplicate hardcoded content hashes.
+The core installer manages the global guide, declared settings, eleven files belonging to the three retained user skills, and the short handoff template. It validates source metadata and script syntax, preserves unowned TOML through the vendored round-trip parser, and atomically replaces changed files with private local backups and rollback after ordinary failures. It checks installed content against the canonical source; prose changes do not require updating duplicate hardcoded content hashes.
 
 The same transaction retires the six previously managed Oracle Solver and Loop Init files. `plan` and `verify` report whether any retired files remain, so an existing installation must remove them before it is considered current. Their current bytes, including local modifications, are backed up before removal. Unknown files in those directories and all project-local records are preserved. An ordinary failure restores the files, and `recover` also understands interrupted transactions from versions that installed these skills.
 

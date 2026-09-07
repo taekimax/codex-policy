@@ -1,0 +1,7 @@
+Objective:
+Current plan:
+Verified state:
+Remaining work:
+Scope:
+
+For a cross-project handoff, include the exact contract, source version, sample output, and destination task under the relevant fields. Record the sent request and returned result separately. Link to authoritative files instead of repeating their contents.
