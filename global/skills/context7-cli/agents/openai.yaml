@@ -1,0 +1,7 @@
+interface:
+  display_name: "Context7 Documentation"
+  short_description: "Explicit version-aware library docs"
+  default_prompt: "Use $context7-cli to verify this library API against Context7 documentation."
+
+policy:
+  allow_implicit_invocation: true

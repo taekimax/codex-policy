@@ -1,46 +1,36 @@
-# Global environment review — 2026-09-09
+# Shared user skills — 2026-09-09
 
-## Request and scope
+## Current request and scope
 
-Review this host's global Codex settings, instructions, and skills for useful additions to the repository that shares the user's environment across machines. The follow-up authorizes committing and pushing the completed review and existing policy work. This review changes repository documentation and publishes the already prepared policy edits; proposed new skill ownership, runtime setup, and host-setting changes remain recommendations.
+Add the proposed Context7 and Naver-to-Notes skills and implement useful related improvements. The user explicitly excludes optional preferences because they may vary across machines. The conversation also authorizes commit and push after completion. Implement through the existing core installer, preserve local configuration and user files, verify the result, and publish the changes.
 
-The inspected runtime is Codex CLI 0.153.2 on macOS. Findings below come from current files, the core plan/verify commands, the optional skill plan, and the supported plugin inventory. No live configuration, skills, account connections, or permissions were changed. The older audit below is historical evidence.
+The implementation starts from `968a779`. The earlier environment review found the existing global guide, agent settings, three managed skills, and handoff template current on this Mac. It also found two unmanaged user skills and an optional connector check blocked by app-only bundles. The historical September 6 audit below records earlier decisions; it does not override this request.
 
-## Findings and recommended inclusion
+## Implemented changes
 
-| Priority | Finding | Recommendation |
-| --- | --- | --- |
-| Publish now | The live global guide and handoff template match the working checkout, but the keep-awake and revised implementation-handoff preferences are uncommitted. Two earlier local commits, `4cbd564` and `ad2052e`, are also ahead of the remote. | Publish this existing work with the review. It includes shared macOS delivery guidance, the handoff template, prerequisite and cleanup guidance, bounded keep-awake behavior, and the requested handoff orchestration preference. |
-| Next addition | `naver-blog-to-notes` exists only in the host's user-skill directory and is absent from the repository catalog and installer. | Include its `SKILL.md` and `agents/openai.yaml` through the existing core transaction after making the prerequisites explicit: macOS, Apple Notes, supported Computer Use, and an available import path. Replace the fixed `node_repl` reference with the available runtime's documented interface. Preserve exact article text, image ordering, and destination rules. |
-| Next addition | `context7-cli` is recognized as externally retained, but its customized instructions and reference are not distributed. A fresh core installation will omit it. | Consider moving its `SKILL.md`, `agents/openai.yaml`, and `references/docs.md` into reviewed ownership. Support host-appropriate executable discovery, align exact-version versus fallback guidance between files, and use narrow public-library queries rather than a full private question. Keep CLI installation and authentication separate. |
-| Maintenance | The optional skill reconciler reports `plugins: blocked` and `connector skills: review` even though all ten required local plugin source checks match. | Review current connector packaging before revising the historical catalog. The selected GitHub cache version has no `skills` directory and lacks the required `yeet`; Gmail and Slack also lack the expected directories. Google Drive's skill set matches. This diagnostic does not establish failed account authentication. |
-| Optional preferences | Model, reasoning, personality, and desktop preferences are preserved locally, so core deployment alone does not reproduce the complete interaction experience. | Keep a documented host setup choice. If uniform defaults are desired later, `personality = "pragmatic"` is a small candidate; model and reasoning choices must account for destination availability. Extend the existing owned-key mechanism only after choosing what should become enforced policy. |
+- Include all five reviewed text files for `context7-cli` and `naver-blog-to-notes` in core deployment. Fresh and existing hosts use the same backups, rollback, preservation, and verification path. There are now five managed user skills with sixteen files.
+- Make Context7 command discovery work with POSIX shells and PowerShell, align version selection and query privacy between its instructions and reference, and preserve its narrow invocation rule. Keep CLI installation and authentication separate from policy deployment.
+- Make the Notes workflow explicitly depend on macOS, Apple Notes, supported Computer Use, and a compatible text import path. Follow current tool instructions instead of naming an obsolete runtime. Preserve exact article text, paragraph and image order, destination selection, and recoverable cleanup.
+- Replace Context7's special external-skill check with the same source comparison used for other managed skills. Derive optional catalog ownership validation from its managed inventory instead of repeating that list again.
+- Recognize complete app-only connector packages through their plugin manifest and app file. A missing skills directory remains a problem when the plugin declares skills or cannot establish a complete app-only package. Keep existing checks for unreviewed and missing skill sets.
+- Support standard Git metadata files in the repository audit so detached worktrees can run the same checks as the main checkout. Retain content, index, origin, and reference checks; validate that Git resolves to the audited checkout.
+- Leave `global/config.owned.toml` and `global/owned-keys.txt` unchanged. No model, reasoning, personality, desktop, or runtime-feature defaults are added. Credentials, permissions, accounts, application dependencies, and private runtime data remain host-local.
 
-The two proposed skill additions comprise five reviewed text files. No credentials, personal article examples, or machine-specific user paths were found in them. Adding them would require updating the core file inventory, optional catalog ownership/validation, repository allowlist, and installer acceptance coverage. Do not introduce a second copying or deployment mechanism.
+Current GitHub, Gmail, and Slack package manifests each declare an app and no skills; their app files are present. The original diagnostic treated these deliberately skill-free packages as damaged bundles. This implementation corrects the packaging assumption without changing account connections, plugin choices, or existing skill-disable policy.
 
-## Current coverage
+## Verification
 
-- **Instructions:** The canonical `global/AGENTS.md` and installed guide match byte-for-byte. No nonempty global override or home/parent instruction file was found. The installed handoff template also matches. The guide already addresses autonomy, scope, preservation, proportionate verification, communication, skills, signing prerequisites, and recovery; no additional generic policy layer is needed.
-- **Owned configuration:** All three declared agent values match: six threads, depth one, and a 1,800-second job runtime. Other settings remain host-owned. Application/system instructions and session-specific tool availability are supplied by Codex and cannot be reproduced by copying `AGENTS.md` alone.
-- **Managed skills:** All eleven files across `google-workspace-artifact-qa`, `local-document-extraction`, and `macos-app-delivery` match their installed copies. Their responsibilities remain distinct and useful. Retired Oracle Solver and Loop Init managed files are absent.
-- **Other skill sources:** All five declared system skills are present. Context7's narrow invocation policy passes the existing check. The two generic skills under the separate user skill root are disabled. System and plugin caches should continue to be supplied by their owners rather than vendored here.
-- **Local settings:** The host selects Astra with high reasoning and pragmatic personality. Desktop choices include steering follow-ups, showing context usage, and preventing sleep while running. Local notification commands, MCP process paths/environment, font availability, account connections, and project trust need host-specific setup rather than importing the complete live configuration.
-- **Features:** The installed CLI reports `js_repl` and `terminal_resize_reflow` as removed. It reports `context_management` as under development and `prevent_idle_sleep` as experimental. The quoted `context_management.experimental_mode` key parses, but is not listed as a recognized CLI feature; successful parsing does not prove that it has an effect. None should be copied into portable policy merely because they exist locally. Stable app and memory capabilities still depend on the destination runtime; memory contents remain local.
-- **Portability:** Core installation supports macOS, Linux, and Windows. The extraction launchers still require POSIX tools and separately provisioned dependencies. macOS delivery needs the destination machine's signing setup. Naver-to-Notes would be usable on Macs, while Context7 executable discovery needs POSIX and PowerShell wording. The handoff model names also require destination availability; the guide already allows an explicit user override.
+- PASS: both skill validators, metadata preservation, and relative reference checks.
+- PASS: all 49 acceptance tests under Python 3.12, including installation of every added file, backup and rollback of existing local edits, preservation of unknown skill files and host preferences, drift detection for metadata and reference text, complete versus incomplete app-only connector packages, and an actual linked-worktree audit.
+- PASS: repository audit, intended diff, whitespace, and local-reference checks. The first run exposed the worktree metadata assumption; the corrected full suite passed.
+- PASS: live core plan/apply/verify. Only the Context7 instructions/reference and Notes instructions required an update; metadata already matched. All sixteen managed skill files now match their sources.
+- PASS: the live global configuration remained byte-for-byte unchanged, as did the two repository-owned configuration sources.
+- PASS: read-only optional skill plan and verify now report `action: none` and verification passed. No plugin reconciliation was applied. Connector status remains `not_present` because one catalog connector is absent; the installed packages no longer produce a false block.
+- NOT RUN: live Context7 network lookup, Notes import, real document conversion, and fresh-session model behavior. Installing the skill text does not establish those workflows or provision dependencies.
 
-## Verification and publication
+Publication uses the verified SSH `origin/main` destination and existing GitHub identity. Remote platform CI runs after publication; local checks do not establish execution on Windows or Linux.
 
-- PASS: live core plan and verify; all managed sources and settings current, retired files absent, no override, clean transaction.
-- PASS: supported plugin inventory and focused source checks for all ten required local plugins; current Google Drive skill set matches the catalog.
-- FAIL: optional reconciliation cannot converge against the selected connector caches; it reports `action: blocked`. No reconciliation or cache repair was applied.
-- PASS: all 47 acceptance tests under Python 3.12, including installation, preservation, rollback, retirement, handoff-template recovery, and optional-catalog fixtures.
-- PASS: repository audit, whitespace and local-reference checks, and review of the intended diff including both previously unpublished commits.
-- NOT RUN: this revision's remote CI at the time this record was committed; the configured macOS, Windows, Linux, and minimum-Python jobs run after publication.
-- NOT RUN: live Notes import, Context7 network lookup, real OCR/Docling conversion, signing/delivery, fresh-session behavior, or installation on another physical machine. These are outside this review.
-
-The verified publication destination is the public `taekimax/codex-policy` repository, `origin/main`, using SSH. Git author and the authenticated GitHub account match its owner. Fetch showed two local commits ahead and no remote-only commits. Publication includes those existing commits without rewriting them.
-
-Official references used to check configuration and discovery: [configuration reference](https://learn.chatgpt.com/docs/config-file/config-reference) and [global instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md). Current source and CLI results determine the host-specific findings above. Follow the README's pull/apply/verify sequence on another machine and start a new session after applying an update.
+The core installer and catalog inspection remain separate. Core deployment does not execute plugin reconciliation. Start a new Codex session after applying an update so the instructions and skill discovery refresh. Other machines should pull the published revision and run the existing plan/apply/verify sequence.
 
 ---
 

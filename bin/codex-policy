@@ -50,6 +50,41 @@ TEMPLATE_SOURCE = REPO_ROOT / "global" / "templates" / "session-handoff.txt"
 TEMPLATE_TARGETS = {"session-handoff-template": "templates/session-handoff.txt"}
 VENDORED_USER_SKILL_FILES = (
     (
+        "context7-cli-instructions",
+        "context7-cli",
+        REPO_ROOT / "global" / "skills" / "context7-cli" / "SKILL.md",
+        "skills/context7-cli/SKILL.md",
+        0o644,
+    ),
+    (
+        "context7-cli-metadata",
+        "context7-cli",
+        REPO_ROOT / "global" / "skills" / "context7-cli" / "agents" / "openai.yaml",
+        "skills/context7-cli/agents/openai.yaml",
+        0o644,
+    ),
+    (
+        "context7-cli-reference",
+        "context7-cli",
+        REPO_ROOT / "global" / "skills" / "context7-cli" / "references" / "docs.md",
+        "skills/context7-cli/references/docs.md",
+        0o644,
+    ),
+    (
+        "naver-blog-to-notes-instructions",
+        "naver-blog-to-notes",
+        REPO_ROOT / "global" / "skills" / "naver-blog-to-notes" / "SKILL.md",
+        "skills/naver-blog-to-notes/SKILL.md",
+        0o644,
+    ),
+    (
+        "naver-blog-to-notes-metadata",
+        "naver-blog-to-notes",
+        REPO_ROOT / "global" / "skills" / "naver-blog-to-notes" / "agents" / "openai.yaml",
+        "skills/naver-blog-to-notes/agents/openai.yaml",
+        0o644,
+    ),
+    (
         "macos-app-delivery-instructions",
         "macos-app-delivery",
         REPO_ROOT / "global" / "skills" / "macos-app-delivery" / "SKILL.md",
@@ -174,6 +209,11 @@ EXPECTED_FILES = {
     "global/official-skills.json",
     "global/owned-keys.txt",
     "global/templates/session-handoff.txt",
+    "global/skills/context7-cli/SKILL.md",
+    "global/skills/context7-cli/agents/openai.yaml",
+    "global/skills/context7-cli/references/docs.md",
+    "global/skills/naver-blog-to-notes/SKILL.md",
+    "global/skills/naver-blog-to-notes/agents/openai.yaml",
     "global/skills/macos-app-delivery/SKILL.md",
     "global/skills/macos-app-delivery/agents/openai.yaml",
     "global/skills/google-workspace-artifact-qa/SKILL.md",
@@ -352,6 +392,8 @@ def validate_vendored_sources() -> Dict[str, bytes]:
             instructions[skill] = text
         elif target.endswith("openai.yaml"):
             metadata[skill] = text
+        elif "/references/" in target and target.endswith(".md"):
+            pass  # Reviewed UTF-8 reference text is deployed with its skill.
         elif target.endswith(".py"):
             try:
                 compile(text, str(source), "exec")
@@ -1145,6 +1187,8 @@ def repository_files() -> Dict[str, Path]:
                 fail("repository audit found a symlink")
         for name in files:
             path = root_path / name
+            if root_path == REPO_ROOT and name == ".git":
+                continue  # Linked worktrees use a Git metadata file, not a directory.
             relative = path.relative_to(REPO_ROOT).as_posix()
             found[relative] = path
     return found
@@ -1168,10 +1212,12 @@ def run_git(args: Sequence[str], *, binary: bool = False) -> Any:
 
 def audit_git_history() -> None:
     git_dir = REPO_ROOT / ".git"
-    if not git_dir.exists():
+    if not lexists(git_dir):
         return
-    if git_dir.is_symlink() or not git_dir.is_dir():
+    if git_dir.is_symlink() or not (git_dir.is_dir() or git_dir.is_file()):
         fail("repository audit found unsafe Git metadata")
+    if Path(run_git(["rev-parse", "--show-toplevel"]).strip()).resolve() != REPO_ROOT:
+        fail("repository audit found mismatched Git metadata")
     staged = run_git(["ls-files", "--stage", "-z"], binary=True)
     tracked: Set[str] = set()
     for record in staged.split(b"\0"):

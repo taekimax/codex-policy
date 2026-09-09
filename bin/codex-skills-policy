@@ -57,6 +57,8 @@ LOCAL_DOCUMENT_EXTRACTION_FILES = (
     "scripts/run_ocr.sh",
 )
 VENDORED_USER_SKILLS = {
+    "context7-cli": (REPO_ROOT / "global" / "skills" / "context7-cli", ("SKILL.md", "agents/openai.yaml", "references/docs.md")),
+    "naver-blog-to-notes": (REPO_ROOT / "global" / "skills" / "naver-blog-to-notes", ("SKILL.md", "agents/openai.yaml")),
     "macos-app-delivery": (REPO_ROOT / "global" / "skills" / "macos-app-delivery", ("SKILL.md", "agents/openai.yaml")),
     "google-workspace-artifact-qa": (GOOGLE_WORKSPACE_QA_SOURCE, GOOGLE_WORKSPACE_QA_FILES),
     "local-document-extraction": (LOCAL_DOCUMENT_EXTRACTION_SOURCE, LOCAL_DOCUMENT_EXTRACTION_FILES),
@@ -125,7 +127,6 @@ class SkillsPlan:
     config_mode: Optional[int]
     plugins_status: str
     standalone_status: str
-    external_status: str
     vendored_status: str
     system_status: str
     connector_status: str
@@ -302,20 +303,11 @@ def load_manifest() -> Dict[str, Any]:
     vendored = value.get("vendored_user_skills")
     if vendored != [
         {
-            "name": "macos-app-delivery",
-            "source": "global/skills/macos-app-delivery",
+            "name": name,
+            "source": source.relative_to(REPO_ROOT).as_posix(),
             "runtime_policy": "exact-reviewed-source",
-        },
-        {
-            "name": "google-workspace-artifact-qa",
-            "source": "global/skills/google-workspace-artifact-qa",
-            "runtime_policy": "exact-reviewed-source",
-        },
-        {
-            "name": "local-document-extraction",
-            "source": "global/skills/local-document-extraction",
-            "runtime_policy": "exact-reviewed-source",
-        },
+        }
+        for name, (source, _) in VENDORED_USER_SKILLS.items()
     ]:
         fail("the vendored user-skill policy differs from the reviewed state")
     return value
@@ -700,28 +692,6 @@ def standalone_status(home: Path) -> str:
     return "current"
 
 
-def external_status(home: Path) -> str:
-    context = home / "skills" / "context7-cli"
-    if lexists(context / "SKILL.md"):
-        safe_skill_file(home, context / "SKILL.md")
-        skill = read_regular(context / "SKILL.md", required=True)
-        policy = read_regular(context / "agents" / "openai.yaml")
-        assert skill is not None
-        narrow_markers = (
-            b"Use only when the user explicitly mentions ctx7 or Context7",
-            b"explicitly invokes $context7-cli",
-            b"Do not trigger for generic library-documentation questions",
-        )
-        if (
-            policy is None
-            or not re.search(rb"(?m)^\s*allow_implicit_invocation:\s*true\s*$", policy)
-            or not all(marker in skill for marker in narrow_markers)
-        ):
-            return "review"
-        return "current"
-    return "not_present"
-
-
 def vendored_status(home: Path) -> str:
     present = 0
     for name, (source_root, files) in VENDORED_USER_SKILLS.items():
@@ -766,6 +736,25 @@ def system_status(home: Path, manifest: Mapping[str, Any]) -> str:
     return "current"
 
 
+def connector_is_app_only(root: Path, plugin_name: str) -> bool:
+    """Recognize a complete app-only bundle without assuming it lost skills."""
+    metadata = root / ".codex-plugin" / "plugin.json"
+    if safe_skill_file(root, metadata) is None:
+        return False
+    raw = read_regular(metadata, required=True)
+    assert raw is not None
+    try:
+        declaration = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, ValueError):
+        return False
+    if not isinstance(declaration, dict) or declaration.get("name") != plugin_name or "skills" in declaration:
+        return False
+    apps = declaration.get("apps")
+    if not isinstance(apps, str) or not apps or Path(apps).is_absolute() or ".." in Path(apps).parts:
+        return False
+    return safe_skill_file(root, root / apps) is not None
+
+
 def connector_status(home: Path, manifest: Mapping[str, Any]) -> str:
     declarations = manifest["plugins"]["external_connector_skills"]
     present = 0
@@ -785,6 +774,8 @@ def connector_status(home: Path, manifest: Mapping[str, Any]) -> str:
         latest = sorted(versions, key=lambda item: version_key(item.name))[-1]
         skills_root = latest / "skills"
         if not lexists(skills_root):
+            if connector_is_app_only(latest, plugin_name):
+                continue
             return "review"
         validate_directory(skills_root, label="a connector skills directory")
         active = set(declaration["active"])
@@ -861,11 +852,10 @@ def build_plan(home: Path, ignored_transaction: Optional[Path] = None) -> Skills
     standalone = standalone_status(home)
     if standalone == "blocking":
         blocked = True
-    external = external_status(home)
     vendored = vendored_status(home)
     system = system_status(home, manifest)
     connectors = connector_status(home, manifest)
-    if external == "review" or vendored == "review" or system != "current" or connectors == "review":
+    if vendored == "review" or system != "current" or connectors == "review":
         blocked = True
     desired, specs, disable_blocked = desired_disabled_paths(home, inventory, manifest)
     if disable_blocked:
@@ -882,7 +872,6 @@ def build_plan(home: Path, ignored_transaction: Optional[Path] = None) -> Skills
         config_mode=config_mode(config_path),
         plugins_status=plugin_status,
         standalone_status=standalone,
-        external_status=external,
         vendored_status=vendored,
         system_status=system,
         connector_status=connectors,
@@ -900,7 +889,6 @@ def report(plan: SkillsPlan) -> Dict[str, Any]:
         "plugins": plan.plugins_status,
         "skill_disables": "drifted" if plan.config_changed else "current",
         "standalone_curated": plan.standalone_status,
-        "retained_external": plan.external_status,
         "vendored_user_skills": plan.vendored_status,
         "retained_system": plan.system_status,
         "connector_skills": plan.connector_status,

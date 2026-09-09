@@ -126,10 +126,9 @@
     {"kind": "user", "skill": "find-skills"},
     {"kind": "user", "skill": "web-design-guidelines"}
   ],
-  "retained_external_skills": [
-    {"name": "context7-cli", "policy": "implicit-narrow"}
-  ],
   "vendored_user_skills": [
+    {"name": "context7-cli", "source": "global/skills/context7-cli", "runtime_policy": "exact-reviewed-source"},
+    {"name": "naver-blog-to-notes", "source": "global/skills/naver-blog-to-notes", "runtime_policy": "exact-reviewed-source"},
     {"name": "macos-app-delivery", "source": "global/skills/macos-app-delivery", "runtime_policy": "exact-reviewed-source"},
     {"name": "google-workspace-artifact-qa", "source": "global/skills/google-workspace-artifact-qa", "runtime_policy": "exact-reviewed-source"},
     {"name": "local-document-extraction", "source": "global/skills/local-document-extraction", "runtime_policy": "exact-reviewed-source"}

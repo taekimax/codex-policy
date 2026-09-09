@@ -34,6 +34,13 @@ SCRIPT = REPO / "bin" / "codex-policy"
 SKILLS_SCRIPT = REPO / "bin" / "codex-skills-policy"
 GLOBAL_POLICY = REPO / "global" / "AGENTS.md"
 OFFICIAL_SKILLS = REPO / "global" / "official-skills.json"
+ADDED_SKILL_FILES = (
+    "skills/context7-cli/SKILL.md",
+    "skills/context7-cli/agents/openai.yaml",
+    "skills/context7-cli/references/docs.md",
+    "skills/naver-blog-to-notes/SKILL.md",
+    "skills/naver-blog-to-notes/agents/openai.yaml",
+)
 GOOGLE_WORKSPACE_QA_SKILL = REPO / "global" / "skills" / "google-workspace-artifact-qa"
 GOOGLE_WORKSPACE_QA_FILES = ("SKILL.md", "agents/openai.yaml")
 LOCAL_DOCUMENT_SKILL = REPO / "global" / "skills" / "local-document-extraction"
@@ -240,19 +247,11 @@ raise SystemExit(2)
         for skill in ("imagegen", "openai-docs", "plugin-creator", "skill-creator", "skill-installer"):
             self.write_skill(self.home / "skills" / ".system" / skill / "SKILL.md")
 
-    def write_current_context7(self) -> None:
-        skill = self.home / "skills" / "context7-cli" / "SKILL.md"
-        skill.parent.mkdir(parents=True, exist_ok=True)
-        skill.write_text(
-            "---\nname: context7-cli\n"
-            "description: Fetch docs. Use only when the user explicitly mentions ctx7 or Context7, "
-            "or explicitly invokes $context7-cli. Do not trigger for generic library-documentation questions.\n"
-            "---\n",
-            encoding="utf-8",
-        )
-        policy = skill.parent / "agents" / "openai.yaml"
-        policy.parent.mkdir(parents=True, exist_ok=True)
-        policy.write_text("policy:\n  allow_implicit_invocation: true\n", encoding="utf-8")
+    def write_current_added_skills(self) -> None:
+        for relative in ADDED_SKILL_FILES:
+            target = self.home / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(REPO / "global" / relative, target)
 
     def write_current_google_workspace_qa(self) -> None:
         target = self.home / "skills" / "google-workspace-artifact-qa"
@@ -305,7 +304,7 @@ raise SystemExit(2)
                 self.assertEqual(destination.read_bytes(), source.read_bytes())
                 if os.name != "nt":
                     self.assertEqual(stat.S_IMODE(destination.stat().st_mode), stat.S_IMODE(source.stat().st_mode))
-        for relative in ("skills/macos-app-delivery/SKILL.md", "skills/macos-app-delivery/agents/openai.yaml", "templates/session-handoff.txt"):
+        for relative in (*ADDED_SKILL_FILES, "skills/macos-app-delivery/SKILL.md", "skills/macos-app-delivery/agents/openai.yaml", "templates/session-handoff.txt"):
             self.assertEqual((self.home / relative).read_bytes(), (REPO / "global" / relative).read_bytes())
         self.assertFalse((self.home / "skills" / "loop-init").exists())
         self.assertFalse((self.home / "skills" / "oracle-solver").exists())
@@ -327,6 +326,38 @@ raise SystemExit(2)
         self.assertIn("result: none", second.stdout)
         self.assertEqual((self.home / "config.toml").read_bytes(), before)
         self.assertEqual(self.transaction_directories(), transactions)
+
+    def test_added_skills_update_rolls_back_and_preserves_host_settings(self) -> None:
+        self.assertEqual(self.run_policy("apply", "--yes").returncode, 0)
+        config = self.home / "config.toml"
+        config.write_text(
+            'model = "host-choice"\nmodel_reasoning_effort = "low"\npersonality = "friendly"\n'
+            '[desktop]\nsansFontSize = 20\n'
+            '[features]\ncontext_management = false\n'
+            '[agents]\nmax_threads = 6\nmax_depth = 1\njob_max_runtime_seconds = 1800\n',
+            encoding="utf-8",
+        )
+        config_before = config.read_bytes()
+        originals = {}
+        for relative in ADDED_SKILL_FILES:
+            target = self.home / relative
+            originals[relative] = ("local edits to " + relative + "\n").encode("utf-8")
+            target.write_bytes(originals[relative])
+        extra = self.home / "skills" / "context7-cli" / "personal.txt"
+        extra.write_bytes(b"preserve local file\n")
+        failed = self.run_policy("apply", "--yes", extra_environment={"CODEX_POLICY_TEST_FAIL_AFTER": "2"})
+        self.assertEqual(failed.returncode, 2, failed.stderr)
+        for relative, original in originals.items():
+            self.assertEqual((self.home / relative).read_bytes(), original)
+        self.assertEqual(config.read_bytes(), config_before)
+        applied = self.run_policy("apply", "--yes")
+        self.assertEqual(applied.returncode, 0, applied.stderr)
+        for relative, original in originals.items():
+            self.assertEqual((self.home / relative).read_bytes(), (REPO / "global" / relative).read_bytes())
+            self.assertTrue(any(path.is_file() and path.read_bytes() == original for folder in self.transaction_directories() for path in folder.rglob("*")))
+        self.assertEqual(extra.read_bytes(), b"preserve local file\n")
+        self.assertEqual(config.read_bytes(), config_before)
+        self.assertEqual(self.run_policy("verify").returncode, 0)
 
     def test_handoff_template_drift_backup_and_failure_recovery(self) -> None:
         initial = self.run_policy("apply", "--yes")
@@ -707,7 +738,7 @@ raise SystemExit(2)
             )
         for skill in ("find-skills", "web-design-guidelines"):
             self.write_skill(Path(environment["HOME"]) / ".agents" / "skills" / skill / "SKILL.md")
-        self.write_current_context7()
+        self.write_current_added_skills()
         self.home.mkdir(parents=True, exist_ok=True)
         stale = self.home / "plugins" / "cache" / "openai-curated-remote" / "canva" / "9.0.0" / "skills" / "canva-branded-presentation" / "SKILL.md"
         unrelated = self.scratch / "unrelated" / "SKILL.md"
@@ -830,7 +861,7 @@ raise SystemExit(2)
         shared_skills = Path(environment["HOME"]) / ".agents" / "skills"
         for skill in ("find-skills", "web-design-guidelines"):
             self.write_skill(shared_skills / skill / "SKILL.md")
-        self.write_current_context7()
+        self.write_current_added_skills()
 
         sources = Path(environment["CODEX_FAKE_SOURCES"])
         configured = [
@@ -927,6 +958,33 @@ raise SystemExit(2)
         self.assertEqual(json.loads(verify.stdout)["action"], "blocked")
         self.assertEqual(self.home.joinpath("config.toml").read_bytes(), original)
 
+    def test_official_skills_accepts_complete_app_only_connectors(self) -> None:
+        environment = self.make_current_skills_environment()
+        for plugin in ("github", "gmail", "slack"):
+            root = self.home / "plugins" / "cache" / "openai-curated-remote" / plugin / "1.0.0"
+            (root / ".codex-plugin").mkdir(parents=True)
+            (root / ".codex-plugin" / "plugin.json").write_text(
+                json.dumps({"name": plugin, "apps": "./.app.json"}), encoding="utf-8",
+            )
+            (root / ".app.json").write_text("{}\n", encoding="utf-8")
+        plan = self.run_skills_policy("plan", "--json", extra_environment=environment)
+        self.assertEqual(plan.returncode, 0, plan.stderr)
+        self.assertNotEqual(json.loads(plan.stdout)["action"], "blocked")
+        self.assertNotEqual(json.loads(plan.stdout)["connector_skills"], "review")
+
+        github = self.home / "plugins" / "cache" / "openai-curated-remote" / "github" / "1.0.0"
+        metadata = github / ".codex-plugin" / "plugin.json"
+        for declaration in (
+            {"name": "github", "apps": "./.app.json", "skills": "./skills/"},
+            {"name": "github", "apps": "./missing-app.json"},
+            {"name": "another-plugin", "apps": "./.app.json"},
+        ):
+            with self.subTest(declaration=declaration):
+                metadata.write_text(json.dumps(declaration), encoding="utf-8")
+                blocked = self.run_skills_policy("verify", "--json", extra_environment=environment)
+                self.assertEqual(blocked.returncode, 1, blocked.stderr)
+                self.assertEqual(json.loads(blocked.stdout)["connector_skills"], "review")
+
     def test_official_skills_blocks_unsafe_connector_skill_sets(self) -> None:
         environment = self.make_current_skills_environment()
         github = self.home / "plugins" / "cache" / "openai-curated-remote" / "github"
@@ -975,37 +1033,45 @@ raise SystemExit(2)
         self.write_skill(self.home / "skills" / "context7-cli" / "SKILL.md")
         external_review = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(external_review.returncode, 1, external_review.stderr)
-        self.assertEqual(json.loads(external_review.stdout)["retained_external"], "review")
+        self.assertEqual(json.loads(external_review.stdout)["vendored_user_skills"], "review")
 
-    def test_official_skills_context7_requires_true_policy_and_narrow_trigger(self) -> None:
+    def test_official_skills_added_skills_require_exact_reviewed_sources(self) -> None:
         environment = self.make_current_skills_environment()
-        self.write_current_context7()
         self.write_current_google_workspace_qa()
         self.write_current_local_document_extraction()
         self.write_current_macos_delivery()
+        self.write_current_added_skills()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
-        self.assertEqual(json.loads(current.stdout)["retained_external"], "current")
         self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
 
         self.write_skill(self.home / "skills" / "context7-cli" / "SKILL.md")
         broad = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(broad.returncode, 0, broad.stderr)
-        self.assertEqual(json.loads(broad.stdout)["retained_external"], "review")
+        self.assertEqual(json.loads(broad.stdout)["vendored_user_skills"], "review")
         self.assertEqual(json.loads(broad.stdout)["action"], "blocked")
 
-        self.write_current_context7()
+        self.write_current_added_skills()
         policy = self.home / "skills" / "context7-cli" / "agents" / "openai.yaml"
         policy.write_text("policy:\n  allow_implicit_invocation: false\n", encoding="utf-8")
         unreachable = self.run_skills_policy("verify", "--json", extra_environment=environment)
         self.assertEqual(unreachable.returncode, 1, unreachable.stderr)
-        self.assertEqual(json.loads(unreachable.stdout)["retained_external"], "review")
+        self.assertEqual(json.loads(unreachable.stdout)["vendored_user_skills"], "review")
+
+        for relative in ("skills/context7-cli/references/docs.md", "skills/naver-blog-to-notes/SKILL.md"):
+            with self.subTest(relative=relative):
+                self.write_current_added_skills()
+                (self.home / relative).unlink()
+                missing = self.run_skills_policy("verify", "--json", extra_environment=environment)
+                self.assertEqual(missing.returncode, 1, missing.stderr)
+                self.assertEqual(json.loads(missing.stdout)["vendored_user_skills"], "review")
 
     def test_official_skills_google_workspace_qa_requires_exact_reviewed_source(self) -> None:
         environment = self.make_current_skills_environment()
         self.write_current_google_workspace_qa()
         self.write_current_local_document_extraction()
         self.write_current_macos_delivery()
+        self.write_current_added_skills()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
@@ -1022,6 +1088,7 @@ raise SystemExit(2)
         self.write_current_google_workspace_qa()
         self.write_current_local_document_extraction()
         self.write_current_macos_delivery()
+        self.write_current_added_skills()
         current = self.run_skills_policy("plan", "--json", extra_environment=environment)
         self.assertEqual(current.returncode, 0, current.stderr)
         self.assertEqual(json.loads(current.stdout)["vendored_user_skills"], "current")
@@ -1397,6 +1464,36 @@ raise SystemExit(2)
             )
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(result.stdout.strip(), "repository audit: passed")
+
+        linked = self.scratch / "linked-worktree"
+        subprocess.run(
+            ["git", "worktree", "add", "--detach", str(linked), "HEAD"],
+            cwd=str(clone), check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+        )
+        self.assertTrue((linked / ".git").is_file())
+        linked_audit = subprocess.run(
+            [sys.executable, str(linked / "bin" / "codex-policy"), "audit-repo"],
+            cwd=str(linked), env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(linked_audit.returncode, 0, linked_audit.stderr)
+        if os.name != "nt":
+            metadata = linked / ".git"
+            original_metadata = metadata.read_bytes()
+            metadata.unlink()
+            metadata.symlink_to(self.scratch / "missing-git-metadata")
+            try:
+                unsafe_audit = subprocess.run(
+                    [sys.executable, str(linked / "bin" / "codex-policy"), "audit-repo"],
+                    cwd=str(linked), env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                    text=True, capture_output=True, check=False,
+                )
+                self.assertEqual(unsafe_audit.returncode, 2)
+                self.assertIn("unsafe Git metadata", unsafe_audit.stderr)
+            finally:
+                metadata.unlink()
+                metadata.write_bytes(original_metadata)
+        subprocess.run(["git", "worktree", "remove", str(linked)], cwd=str(clone), check=True)
 
         commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=str(clone), text=True).strip()
         valid_turn_diff = (

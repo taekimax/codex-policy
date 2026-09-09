@@ -9,6 +9,8 @@ Canonical sources and a portable installer for consistent personal Codex default
 | Global instructions | `global/AGENTS.md`, deployed byte-for-byte to `$CODEX_HOME/AGENTS.md` |
 | Repository instructions | Root `AGENTS.md`, applicable only when working in this repository |
 | Owned settings | `global/config.owned.toml` and `global/owned-keys.txt`: portable agent limits |
+| Context7 lookup | `global/skills/context7-cli/`: explicitly requested, version-aware library documentation |
+| Naver Blog to Notes | `global/skills/naver-blog-to-notes/`: exact article text and images in Apple Notes |
 | Artifact QA | `global/skills/google-workspace-artifact-qa/`: native Google layout and typography checks |
 | Local extraction | `global/skills/local-document-extraction/`: OCR and offline structured conversion tools |
 | macOS delivery | `global/skills/macos-app-delivery/`: recoverable app delivery using project adapters |
@@ -30,7 +32,7 @@ Requires Python 3.9 or newer. The core command works locally on macOS, Linux, an
 ./bin/codex-policy verify
 ```
 
-The core installer manages the global guide, declared settings, eleven files belonging to the three retained user skills, and the short handoff template. It validates source metadata and script syntax, preserves unowned TOML through the vendored round-trip parser, and atomically replaces changed files with private local backups and rollback after ordinary failures. It checks installed content against the canonical source; prose changes do not require updating duplicate hardcoded content hashes.
+The core installer manages the global guide, declared settings, sixteen files belonging to the five retained user skills, and the short handoff template. It validates source metadata and script syntax, preserves unowned TOML through the vendored round-trip parser, and atomically replaces changed files with private local backups and rollback after ordinary failures. It checks installed content against the canonical source; prose changes do not require updating duplicate hardcoded content hashes.
 
 The same transaction retires the six previously managed Oracle Solver and Loop Init files. `plan` and `verify` report whether any retired files remain, so an existing installation must remove them before it is considered current. Their current bytes, including local modifications, are backed up before removal. Unknown files in those directories and all project-local records are preserved. An ordinary failure restores the files, and `recover` also understands interrupted transactions from versions that installed these skills.
 
@@ -42,18 +44,18 @@ Start a new Codex session after a successful live update. System and plugin skil
 
 ## Environment coverage
 
-Core verification establishes the shared instructions, three agent limits, three reviewed user skills, and handoff template. A passing result does not establish that another machine has the same model access, applications, plugins, or runtime dependencies. The [latest environment review](.loop/README.md) records the remaining gaps and proposed additions.
+Core verification establishes the shared instructions, three agent limits, five reviewed user skills, and handoff template. A passing result does not establish that another machine has the same model access, applications, plugins, or runtime dependencies. The [latest environment review](.loop/README.md) records implementation and verification evidence.
 
 | Environment layer | How to reproduce it on another machine |
 | --- | --- |
 | Shared instructions, limits, skills, template | Use the core pull/apply/verify workflow below. |
-| Context7 and Naver-to-Notes user skills | Not currently deployed by this repository. Both are candidates for reviewed inclusion; Context7 also needs a host-installed CLI, and Naver-to-Notes needs macOS and Apple Notes. |
+| Context7 and Naver-to-Notes prerequisites | Skill files are included in core deployment. Context7 needs a host-installed `ctx7` CLI. Naver-to-Notes needs macOS, Apple Notes, and supported Computer Use with application access. |
 | Model, reasoning, personality, and desktop preferences | Choose supported values on each host. These settings are preserved by core apply. |
 | System skills, artifact tools, browser control, and connectors | Use the current Codex distribution and supported plugin setup; verify discovery in a new session and connect accounts on the destination host. |
 | Extraction, signing, fonts, and local tools | Provision the dependencies required by the chosen workflows on each host. Installed skill text alone does not supply them. |
 | Credentials, project trust, permissions, local paths, sessions, and memories | Keep local. These are not inputs to this public repository. |
 
-The optional skill reconciler uses an older connector catalog. The 2026-09-09 review found core policy current while reconciliation was blocked by connector skill-layout differences. Recheck its plan before using it; that result alone does not establish a broken account connection. Keep experimental and removed runtime feature flags out of portable defaults until reviewed against the destination Codex version.
+The optional skill reconciler recognizes app-only connector bundles when their manifest declares an existing app file and no skills. Bundles that declare skills must still provide the reviewed skill set. Recheck its plan before using it; a packaging diagnostic does not establish a broken account connection. Model, reasoning, personality, desktop choices, and runtime feature flags remain host-owned; this repository supplies no shared configuration defaults for them.
 
 ## Synchronize another machine
 
@@ -98,7 +100,7 @@ Loop Init and Oracle Solver are retired through this normal apply workflow; fres
 
 This is separate from core deployment. Its manifest records earlier catalog decisions; dates and marketplace snapshots are historical evidence, not current install pins or permission to change a host. Review the plan against the requested scope before applying. Current marketplace drift can affect this diagnostic without invalidating a successful core policy update.
 
-The tool reconciles only declared plugin operations and exact skill-disable entries, preserves unrelated configuration and connector accounts, and uses the host's supported plugin commands. It verifies retained user-skill files against canonical sources but does not copy them. The narrow Context7 lookup stays externally managed, and system skill sources are never rewritten here.
+The tool reconciles only declared plugin operations and exact skill-disable entries, preserves unrelated configuration and connector accounts, and uses the host's supported plugin commands. It verifies retained user-skill files against canonical sources but does not copy them. Context7 and Naver-to-Notes are managed by core deployment alongside the other reviewed user skills. System skill sources are never rewritten here.
 
 ## Verification and maintenance
 

@@ -1,0 +1,4 @@
+interface:
+  display_name: "네이버 블로그를 Notes로 저장"
+  short_description: "원문 파일을 Notes로 가져오고 이미지는 UI 첨부"
+  default_prompt: "Use $naver-blog-to-notes to import this Naver Blog article as an exact text file and attach its graphics in Notes."
