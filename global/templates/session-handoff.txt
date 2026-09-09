@@ -1,7 +1,8 @@
 Objective:
-Current plan:
+Project/worktree and plan evidence paths:
 Verified state:
 Remaining work:
-Scope:
+Scope and explicit permissions:
+Implementation judgment and orchestration:
 
-For a cross-project handoff, include the exact contract, source version, sample output, and destination task under the relevant fields. Record the sent request and returned result separately. Link to authoritative files instead of repeating their contents.
+Use the global handoff guidance and omit fields that do not apply. For cross-project work, include the exact contract, source version, sample output, and destination task; distinguish the sent request from the returned result.

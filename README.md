@@ -40,6 +40,21 @@ On Windows, invoke the commands with Python, for example `python bin/codex-polic
 
 Start a new Codex session after a successful live update. System and plugin skills are supplied by their owners and are not rewritten here. The reviewed host currently discovers managed user skills under `$CODEX_HOME/skills`; revalidate discovery before moving to a different runtime location rather than installing duplicates.
 
+## Environment coverage
+
+Core verification establishes the shared instructions, three agent limits, three reviewed user skills, and handoff template. A passing result does not establish that another machine has the same model access, applications, plugins, or runtime dependencies. The [latest environment review](.loop/README.md) records the remaining gaps and proposed additions.
+
+| Environment layer | How to reproduce it on another machine |
+| --- | --- |
+| Shared instructions, limits, skills, template | Use the core pull/apply/verify workflow below. |
+| Context7 and Naver-to-Notes user skills | Not currently deployed by this repository. Both are candidates for reviewed inclusion; Context7 also needs a host-installed CLI, and Naver-to-Notes needs macOS and Apple Notes. |
+| Model, reasoning, personality, and desktop preferences | Choose supported values on each host. These settings are preserved by core apply. |
+| System skills, artifact tools, browser control, and connectors | Use the current Codex distribution and supported plugin setup; verify discovery in a new session and connect accounts on the destination host. |
+| Extraction, signing, fonts, and local tools | Provision the dependencies required by the chosen workflows on each host. Installed skill text alone does not supply them. |
+| Credentials, project trust, permissions, local paths, sessions, and memories | Keep local. These are not inputs to this public repository. |
+
+The optional skill reconciler uses an older connector catalog. The 2026-09-09 review found core policy current while reconciliation was blocked by connector skill-layout differences. Recheck its plan before using it; that result alone does not establish a broken account connection. Keep experimental and removed runtime feature flags out of portable defaults until reviewed against the destination Codex version.
+
 ## Synchronize another machine
 
 After a reviewed change is published to `origin/main`, update each machine's checkout and apply from it. Preserve local edits when reconciling an existing checkout; do not reset it to force a pull.
