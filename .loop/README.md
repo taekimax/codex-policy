@@ -1,4 +1,31 @@
-# Shared user skills — 2026-09-09
+# Workflow review integration — 2026-09-10
+
+## Current request and scope
+
+Review the completed Codex/Hermes workflow changes and update this repository with the applicable portable guidance. Preserve existing policy edits and newer shared-skill work. This request covers local source updates and verification; earlier publication permissions recorded below are historical.
+
+The starting revision is `05421ed`. The working global guide already contains the reviewed worker contract and other local policy edits, and matches the installed guide. Keep those edits. Hermes-specific routing, profile instructions, citation helpers, and Codex bridge behavior belong to their existing owners and are not copied into this repository.
+
+## Changes
+
+- Retain native delegation, scoped worker inputs, complete/partial/blocked returns, and acceptance by the requesting agent. Carry required source and access constraints into the worker task.
+- Add concise evidence guidance: tie decisive claims to actual sources/artifacts, preserve dates and material limitations, separate facts from calculations and interpretation, and retain unresolved conflicts. Reuse the existing task record and avoid resetting another active task's evidence.
+- Make checks, evidence locations, blockers, and the completion condition explicit in the existing handoff template. No new ledger, scheduler, orchestration framework, or plugin dependency is introduced.
+- Preserve host-owned settings and the existing installation mechanism. The prior mixed Codex/Hermes test count and isolated timing samples are historical evidence, not validation of this repository revision or proof of general speed gains.
+
+## Verification
+
+- PASS: all 49 existing acceptance tests under Python 3.12 (23.736 seconds), including handoff-template drift, backup, failure recovery, and preservation of host settings.
+- PASS: repository audit, focused source diff, and whitespace checks. The pre-existing global policy text remains intact apart from the deliberate source/access constraint and evidence additions.
+- PASS: live core plan/apply/verify. Only the global guide and handoff template needed deployment; the final plan reports no remaining changes. Installed bytes match source.
+- PASS: the live configuration and both owned configuration sources remained byte-identical. Managed skills remain current.
+- NOT RUN: fresh-session model behavior, new research latency/cost benchmarks, or Hermes runtime checks. These wording/template changes do not establish improvements in those layers.
+
+Source and local installation are complete. Start a new Codex session to load the revised guide. No commit or push has been performed for this request; other machines have not been updated.
+
+---
+
+# Historical shared user skills update — 2026-09-09
 
 ## Current request and scope
 

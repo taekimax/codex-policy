@@ -1,7 +1,7 @@
 Objective:
 Project/worktree and plan evidence paths:
-Verified state:
-Remaining work:
+Verified state, checks, and evidence locations:
+Remaining work, blockers, and completion condition:
 Scope and explicit permissions:
 Implementation judgment and orchestration:
 

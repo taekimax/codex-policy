@@ -22,6 +22,8 @@ Codex normally uses `~/.codex` as its global root, or `CODEX_HOME` when set. A n
 
 The instruction review follows the [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model): make autonomy and skill precedence explicit, specify useful communication, and calibrate delegation and testing. Model selection remains host-owned. This repository does not install an API migration or modify credentials, permissions, sandboxing, approvals, project trust, runtime feature flags, or unrelated host settings.
 
+The shared workflow uses native delegation with explicit scope, source/access constraints, and compact complete/partial/blocked returns. The requesting agent reads the decisive evidence and verifies the integrated result. Source-backed work preserves dates, limitations, and unresolved conflicts in direct citations or the existing task record; citation checks and process exit status do not establish task completion. Hermes routing, profiles, citation helpers, and worker scripts remain with their own source/deployment owners.
+
 ## Apply the core policy
 
 Requires Python 3.9 or newer. The core command works locally on macOS, Linux, and Windows; Windows uses native locking and verifies content without POSIX mode checks. It honors `CODEX_HOME` for alternate installations and isolated tests.
