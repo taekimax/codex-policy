@@ -32,4 +32,4 @@ Look for missing glyphs, font substitution, clipping, overflow, unexpected wrapp
 
 ## Report
 
-State the target, meaningful checks as PASS, FAIL, or NOT RUN, located defects, and any limitation that affects the requested use. Distinguish actual defects from unavailable diagnostics. Continue authorized repairs; ask for a decision only when the remedy materially changes the requested result or exceeds scope.
+For a requested QA report, state the target and relevant checks, using PASS, FAIL, or NOT RUN when useful, with located defects and limitations affecting use. During authoring, keep check details internal and deliver the artifact with only material unresolved issues. Distinguish actual defects from unavailable diagnostics and continue authorized repairs.

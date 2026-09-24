@@ -1,6 +1,6 @@
 ---
 name: context7-cli
-description: Fetch version-aware library documentation through the already-installed ctx7 CLI. Use only when the user explicitly mentions ctx7 or Context7, or explicitly invokes $context7-cli. Do not trigger for generic library-documentation questions, skill discovery or installation, MCP setup, login, or account configuration.
+description: Fetch version-aware library documentation through the installed ctx7 CLI when the user names Context7 or ctx7, or invokes $context7-cli.
 ---
 
 # Context7 Documentation

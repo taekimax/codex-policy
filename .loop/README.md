@@ -1,4 +1,47 @@
-# Workflow review integration — 2026-09-10
+# Common behavior and authoring policy — 2026-09-24
+
+## Current outcome and authority
+
+Completed source edits, local application, and verification. The request adapts Hermes common principles to Codex coding, writing, research, and conversation for practical usefulness, simplicity, and consistency. The repository started clean on `main`. Hermes was reference-only. No commit, push, external delivery, restart, model/authentication/permission change, memory edit, or data-access change was authorized or performed. There is no pending user decision; start a new Codex session for the full refreshed instruction and skill catalog.
+
+## Loading and ownership
+
+- Local CLI: 0.156.1. `CODEX_HOME` was unset; the target was `~/.codex`. No global or repository `AGENTS.override.md`, custom instruction file, inline developer instruction setting, or project config override was active. The live session catalog included the reviewed user skills and current artifact plugins.
+- `global/AGENTS.md` remains the common-policy source. Root `AGENTS.md` remains repository guidance. The existing transactional installer owns local deployment and backups.
+- Settings own three agent limits only. `global/config.owned.toml`, `global/owned-keys.txt`, and live `config.toml` stayed unchanged; behavior preferences require no new configuration key.
+- Adopted the existing standalone `codex-design` and `project-handoff` skills into `global/skills/` and the same installer, expanding the managed inventory to seven skills / 24 files. Their previous local contents were backed up by normal apply. Other user skills and unrelated dirty work in the separate skills checkout remain preserved.
+- Reviewed live Context7 description and Naver copying improvements before explicitly incorporating them into canonical sources. This resolves the pre-existing drift without reverting the newer text/plain-file mode or introducing reverse-sync tooling.
+- System/plugin packages retain their owners. Their generic suggestions are scoped through user-level global preferences, not cache edits, forks, wrapper skills, or a new mandatory call chain. Optional plugin reconciliation was not applied.
+
+Official loading references: [instruction discovery](https://learn.chatgpt.com/docs/agent-configuration/agents-md) and [skill activation](https://developers.openai.com/plugins/concepts/skills). Installed paths and the actual session catalog were checked separately from documentation.
+
+## Policy decisions
+
+- Common guidance now covers usable results, reader/context, source-grounded clarification, conditional judgment, material uncertainty, concise writing, and necessary citations. Internal evidence verification is separate from citations displayed to the reader.
+- No blanket web/JSG/Heatseeker search, evidence table, tests, or multi-agent requirement. Preserve explicit specialist source requirements and artifact fidelity/rendering checks.
+- Use one primary authoring route. Native Google templates/edits follow the Google-specific route; ordinary new decks use Presentations; explicit or specialized reconstruction/template/narration work uses PPT-Master. Existing task authorization satisfies routine workflow confirmations. Extra style-sample retrieval and follow-up sections are conditional on actual usefulness.
+- Useful delegation uses the latest supported Luna/Max or SOL/High workers, Astra/High final verification, and acting-agent integration. Active global/handoff instructions contain no pinned model version.
+- `codex-design` now has a narrow visual-work trigger and conditional references/checks; behavior-only frontend fixes do not load it. Its entrypoint fell from 152 to 33 lines. References no longer force detector passes, generic risk sections, fixed reports, or repeated approval. Existing design/source and Impeccable boundaries remain.
+- `project-handoff` reuses the global guidance/template. macOS replacement details moved to the delivery skill, keeping the global entry brief. Google artifact QA distinguishes requested audit reports from ordinary artifact delivery. Naver exact-copy checks preserve source order and graphics while avoiding unnecessary repeat retrieval or fixed reporting fields.
+- Active market research, JSG retrieval, local extraction, and third-party PPT workflows were inspected and retain their specialist boundaries. Disabled legacy skills remain disabled and untouched.
+
+## Verification
+
+- PASS: 49 existing acceptance tests, covering fresh installation, added skill deployment, host-setting preservation, local edits/backups, rollback, recovery, retirement, and catalog consistency. The initial repository-index check required the newly added files; a private candidate index made the full suite and audit pass while preserving the actual index.
+- PASS: repository audit, focused diff, all seven skill validators, and relative Markdown references. No new wording-matching tests were added.
+- PASS: core `plan`, `apply --yes`, `verify`, and post-apply `plan` (`action: none`, transaction clean). Global guide, handoff template, and all 24 skill files are byte-identical to source (26/26 targets).
+- PASS: live `config.toml` is byte-identical to the pre-apply snapshot. All 398 baseline plugin/system instruction files are unchanged. Across 830 captured instruction/config files, all 12 changed files are intended managed targets; no unexpected change or missing baseline file was found. The template was checked separately.
+- PASS: independent Astra High source review and eight prompt simulations: simple A4 question; familiar-note cleanup; new external-fact research; requested engineering judgment; team memo; DOCX template edit; narrow CSS vs behavior fix; authorized native PPTX edit. Simulations retained necessary clarification, citations, technical gates, and rendered QA without routine extra sections.
+- PASS: Astra High final installed readback and preservation review. Recovery files remain in `$CODEX_HOME/.codex-policy/transactions/20260924T062043Z-000085f2/`.
+- NOT RUN: a fresh-session behavior test, real DOCX/PPTX/Google authoring, live Notes import, cross-platform execution, or external delivery. Source/prompt simulation and byte parity do not prove those workflows. The current session received refreshed global text after apply; this does not prove the complete skill/plugin catalog reloaded.
+
+## Remaining step
+
+Use a new Codex session to load the complete updated guidance. Source changes remain uncommitted and unpublished, as requested. Other hosts are unchanged.
+
+---
+
+# Historical workflow review integration — 2026-09-10
 
 ## Current request and scope
 

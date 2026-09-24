@@ -1,0 +1,4 @@
+interface:
+  display_name: "Codex Design"
+  short_description: "Unified web UI design, audit, and implementation"
+  default_prompt: "Use $codex-design for this requested visual design work, preserving the existing system and checking the affected result."

@@ -5,7 +5,7 @@ description: Package, install, update, replace, or deliver a named macOS app usi
 
 # macOS App Delivery
 
-Complete the requested delivery stages using the project's existing commands and the global recoverable-install preference. A packaging request alone does not imply installation, launch, cleanup, commit, or push; carry forward stages already authorized in the conversation.
+Complete the requested delivery stages using the project's existing commands and the recoverable replacement procedure below. A packaging request alone does not imply installation, launch, cleanup, commit, or push; carry forward stages already authorized in the conversation.
 
 ## Resolve the project adapter
 
@@ -18,7 +18,9 @@ Read the project's delivery script or short delivery document for the repository
 3. Verify the installed signature and compare the staged and installed core executable and service payloads, using byte comparison or cryptographic hashes. Confirm the installed bundle path. Signature success alone does not prove launch, system consent, provider access, or functional behavior.
 4. Launch when included in scope and exercise the requested user flow. If a locked Mac or system consent requires user action, report the exact action once and save the current checkpoint. Preserve successful packaging/installation evidence while the live check remains incomplete.
 
-If replacement or verification fails, retain both bundles, identify the exact failed stage, and use the preserved original for recovery when appropriate within scope. Do not bypass a macOS denial or escalate privileges. A routine failure can be investigated and retried within existing authority; stop dependent delivery stages while the installation is unresolved.
+Keep the signed app root owner-writable and preserve intended payload modes. For permission-denied replacement, inspect ownership, parent permissions, app-root mode, the executing app, and its App Management grant before attributing the failure to macOS security. Restoring owner write on the root of the exact user-owned app already authorized for replacement is a routine packaging correction. Retain signature verification; avoid recursive permission changes, sudo, TCC database edits, or security bypasses.
+
+If replacement or verification fails, retain both bundles, identify the exact failed stage, and use the preserved original for recovery when appropriate within scope. A routine failure can be investigated and retried within existing authority; stop dependent delivery stages while the installation is unresolved.
 
 ## Finish requested stages
 
@@ -26,4 +28,4 @@ For cleanup, inventory the proposed residues and account for dirty changes befor
 
 Commit the intended files when requested, after checking the scoped diff and relevant validation. Push only when requested. A later cleanup or commit failure does not erase a successful installation.
 
-Report the requested stages separately and concisely: staged/installed path, rollback location, launch and user-flow result, cleanup result, and commit result. Label relevant checks PASS, FAIL, or NOT RUN; state the remaining user-visible gap when one exists.
+Report the completed requested stages and any remaining user-visible gap concisely. Include installed and recovery paths when relevant; omit unrelated stages.

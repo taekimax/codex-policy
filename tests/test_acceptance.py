@@ -35,6 +35,14 @@ SKILLS_SCRIPT = REPO / "bin" / "codex-skills-policy"
 GLOBAL_POLICY = REPO / "global" / "AGENTS.md"
 OFFICIAL_SKILLS = REPO / "global" / "official-skills.json"
 ADDED_SKILL_FILES = (
+    "skills/codex-design/SKILL.md",
+    "skills/codex-design/agents/openai.yaml",
+    "skills/codex-design/references/design-context.md",
+    "skills/codex-design/references/design-language.md",
+    "skills/codex-design/references/impeccable.md",
+    "skills/codex-design/references/workflows.md",
+    "skills/project-handoff/SKILL.md",
+    "skills/project-handoff/agents/openai.yaml",
     "skills/context7-cli/SKILL.md",
     "skills/context7-cli/agents/openai.yaml",
     "skills/context7-cli/references/docs.md",

@@ -14,6 +14,8 @@ Canonical sources and a portable installer for consistent personal Codex default
 | Artifact QA | `global/skills/google-workspace-artifact-qa/`: native Google layout and typography checks |
 | Local extraction | `global/skills/local-document-extraction/`: OCR and offline structured conversion tools |
 | macOS delivery | `global/skills/macos-app-delivery/`: recoverable app delivery using project adapters |
+| Visual design | `global/skills/codex-design/`: scoped web UI design and verification with conditional references |
+| Project handoff | `global/skills/project-handoff/`: current-state inspection using the global handoff guidance and template |
 | Handoff template | `global/templates/session-handoff.txt`, deployed to `$CODEX_HOME/templates/` |
 | Optional catalog reconciliation | `global/official-skills.json` and `bin/codex-skills-policy` |
 | Audit record | `.loop/README.md`; older decisions and logs are historical only |
@@ -22,7 +24,9 @@ Codex normally uses `~/.codex` as its global root, or `CODEX_HOME` when set. A n
 
 The instruction review follows the [GPT-6 Astra guidance](https://developers.openai.com/api/docs/guides/latest-model): make autonomy and skill precedence explicit, specify useful communication, and calibrate delegation and testing. Model selection remains host-owned. This repository does not install an API migration or modify credentials, permissions, sandboxing, approvals, project trust, runtime feature flags, or unrelated host settings.
 
-The shared workflow uses native delegation with explicit scope, source/access constraints, and compact complete/partial/blocked returns. The requesting agent reads the decisive evidence and verifies the integrated result. Source-backed work preserves dates, limitations, and unresolved conflicts in direct citations or the existing task record; citation checks and process exit status do not establish task completion. Hermes routing, profiles, citation helpers, and worker scripts remain with their own source/deployment owners.
+Common behavior lives in `global/AGENTS.md`: usable results, concise audience-aware writing, necessary judgment and citations, continuity of authorization, and proportionate tools and verification. Skills contain specialized procedures and formats. Familiar-document cleanup and ordinary conversation do not require a generic writing/research chain. Internal evidence checks remain distinct from citations shown to the reader.
+
+When delegation is useful, resolve the latest supported Luna/Max or SOL/High for bounded workers and Astra/High for final verification; the acting agent owns integration. Model IDs are resolved at use time and saved host model settings stay unchanged. Handoffs reuse this policy. Hermes personas, routing, profiles, memory, citation helpers, and worker scripts remain with their own owners.
 
 ## Apply the core policy
 
@@ -34,7 +38,7 @@ Requires Python 3.9 or newer. The core command works locally on macOS, Linux, an
 ./bin/codex-policy verify
 ```
 
-The core installer manages the global guide, declared settings, sixteen files belonging to the five retained user skills, and the short handoff template. It validates source metadata and script syntax, preserves unowned TOML through the vendored round-trip parser, and atomically replaces changed files with private local backups and rollback after ordinary failures. It checks installed content against the canonical source; prose changes do not require updating duplicate hardcoded content hashes.
+The core installer manages the global guide, declared settings, twenty-four files belonging to seven reviewed user skills, and the short handoff template. It validates source metadata and script syntax, preserves unowned TOML through the vendored round-trip parser, and atomically replaces changed files with private local backups and rollback after ordinary failures. It checks installed content against the canonical source; prose changes do not require updating duplicate hardcoded content hashes.
 
 The same transaction retires the six previously managed Oracle Solver and Loop Init files. `plan` and `verify` report whether any retired files remain, so an existing installation must remove them before it is considered current. Their current bytes, including local modifications, are backed up before removal. Unknown files in those directories and all project-local records are preserved. An ordinary failure restores the files, and `recover` also understands interrupted transactions from versions that installed these skills.
 
@@ -42,11 +46,11 @@ A no-op apply creates no backup transaction. Invalid TOML, unsafe targets, concu
 
 On Windows, invoke the commands with Python, for example `python bin/codex-policy apply --yes`. Core policy deployment and retirement use native filesystem operations; no shell or WSL is needed. The optional local extraction skill's supplied launchers and provisioner are POSIX tools, so installing its guidance does not establish a working native Windows OCR runtime.
 
-Start a new Codex session after a successful live update. System and plugin skills are supplied by their owners and are not rewritten here. The reviewed host currently discovers managed user skills under `$CODEX_HOME/skills`; revalidate discovery before moving to a different runtime location rather than installing duplicates.
+Start a new Codex session after a successful live update. System and plugin skills are supplied by their owners and are not rewritten here. Apply user preferences through the global guide, preserving tool constraints and task-specific source, fidelity, and rendering requirements; do not patch versioned caches or create parallel wrapper skills. Existing authorization covers routine workflow confirmations. Select one primary authoring route and add other skills only for needed capabilities. The reviewed host currently discovers managed user skills under `$CODEX_HOME/skills`; revalidate discovery before moving to a different runtime location rather than installing duplicates.
 
 ## Environment coverage
 
-Core verification establishes the shared instructions, three agent limits, five reviewed user skills, and handoff template. A passing result does not establish that another machine has the same model access, applications, plugins, or runtime dependencies. The [latest environment review](.loop/README.md) records implementation and verification evidence.
+Core verification establishes the shared instructions, three agent limits, seven reviewed user skills, and handoff template. A passing result does not establish that another machine has the same model access, applications, plugins, or runtime dependencies. The [latest environment review](.loop/README.md) records implementation and verification evidence.
 
 | Environment layer | How to reproduce it on another machine |
 | --- | --- |
@@ -90,7 +94,7 @@ python bin/codex-policy verify
 
 For authenticated Git operations, use `git@github.com:taekimax/codex-policy.git` with each machine's own SSH setup; GitHub API work uses existing `gh` OAuth. Do not copy a Codex home or its backups between machines. `CODEX_HOME` selects a non-default local target. Restart Codex after verification passes.
 
-Loop Init and Oracle Solver are retired through this normal apply workflow; fresh installs omit both. The global guide contains the useful continuity and ordinary subagent guidance, without a required `.loop/` framework or dedicated independent xhigh reviewer. The optional catalog policy retains exact disable entries for legacy installations, but plugin reconciliation is not needed to retire the core-managed files.
+Loop Init and Oracle Solver are retired through this normal apply workflow; fresh installs omit both. The global guide owns continuity and conditional delegation without a required `.loop/` framework. The optional catalog policy retains exact disable entries for legacy installations, but plugin reconciliation is not needed to retire the core-managed files.
 
 ## Optional skill and plugin reconciliation
 
@@ -102,7 +106,7 @@ Loop Init and Oracle Solver are retired through this normal apply workflow; fres
 
 This is separate from core deployment. Its manifest records earlier catalog decisions; dates and marketplace snapshots are historical evidence, not current install pins or permission to change a host. Review the plan against the requested scope before applying. Current marketplace drift can affect this diagnostic without invalidating a successful core policy update.
 
-The tool reconciles only declared plugin operations and exact skill-disable entries, preserves unrelated configuration and connector accounts, and uses the host's supported plugin commands. It verifies retained user-skill files against canonical sources but does not copy them. Context7 and Naver-to-Notes are managed by core deployment alongside the other reviewed user skills. System skill sources are never rewritten here.
+The tool reconciles only declared plugin operations and exact skill-disable entries, preserves unrelated configuration and connector accounts, and uses the host's supported plugin commands. It verifies retained user-skill files against canonical sources but does not copy them. All seven reviewed user skills are managed by core deployment. Other standalone skills retain their existing owners; they are not adopted or overwritten by core apply. System skill sources are never rewritten here.
 
 ## Verification and maintenance
 

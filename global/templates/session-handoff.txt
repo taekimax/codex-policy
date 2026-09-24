@@ -3,6 +3,6 @@ Project/worktree and plan evidence paths:
 Verified state, checks, and evidence locations:
 Remaining work, blockers, and completion condition:
 Scope and explicit permissions:
-Implementation judgment and orchestration:
+Implementation judgment and useful delegation:
 
 Use the global handoff guidance and omit fields that do not apply. For cross-project work, include the exact contract, source version, sample output, and destination task; distinguish the sent request from the returned result.
